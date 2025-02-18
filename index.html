@@ -10,7 +10,7 @@
   <button id="fetchButton">Start Fetch Request</button>
 
   <script>
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl6a25ucWphc2ZscnZienNydXZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzg2NTcyMzgsImV4cCI6MjA1NDIzMzIzOH0.6_0kCMuCHM5N2UCFx6CO1abNREd73c8buyAtCchAmIE'; // Replace with your actual anon key
+    const SUPABASE_ANON_KEY = 'your-supabase-anon-key'; // Replace with your actual anon key
 
     // Function to send the OPTIONS preflight request
     async function sendPreflightRequest() {
@@ -60,7 +60,7 @@
       }
     }
 
-    // Send the preflight request when the page loads
+    // Send the preflight request automatically when the page loads
     window.addEventListener('load', () => {
       console.log("Page loaded. Sending preflight request...");
       sendPreflightRequest();
