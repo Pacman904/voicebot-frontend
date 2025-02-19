@@ -3,68 +3,34 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Test Preflight and Fetch</title>
+  <title>Test Supabase with no-cors</title>
 </head>
 <body>
-  <h1>Test Preflight and Fetch</h1>
+  <h1>Test Supabase with no-cors</h1>
   <button id="fetchButton">Start Fetch Request</button>
 
   <script>
     const SUPABASE_ANON_KEY = 'your-supabase-anon-key'; // Replace with your actual anon key
 
-    // Function to send the OPTIONS preflight request
-    async function sendPreflightRequest() {
-      try {
-        console.log("Sending preflight (OPTIONS) request...");
-        const response = await fetch("https://yzknnqjasflrvbzsruvd.supabase.co/functions/v1/create_session", {
-          method: "OPTIONS",
-          headers: {
-            'Origin': 'https://pacman904.github.io',
-            'Access-Control-Request-Method': 'GET',
-            'Access-Control-Request-Headers': 'Authorization, Content-Type'
-          }
-        });
-
-        if (!response.ok) {
-          console.error("Preflight request failed:", response.status, response.statusText);
-          throw new Error("Preflight request failed");
-        }
-
-        console.log("Preflight request successful:", response.status, response.statusText);
-      } catch (error) {
-        console.error("Error during preflight request:", error);
-      }
-    }
-
-    // Function to send the actual fetch request
+    // Function to send the fetch request with no-cors mode
     async function fetchIceServersAndSession() {
       try {
-        console.log("Sending fetch (GET) request...");
+        console.log("Sending fetch (GET) request with no-cors...");
         const response = await fetch("https://yzknnqjasflrvbzsruvd.supabase.co/functions/v1/create_session", {
           method: "GET",
           headers: {
             'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
             'Content-Type': 'application/json'
-          }
+          },
+          mode: 'no-cors' // Temporarily bypass CORS
         });
 
-        if (!response.ok) {
-          console.error("Fetch request failed:", response.status, response.statusText);
-          throw new Error("Failed to fetch session data");
-        }
-
-        const data = await response.json();
-        console.log("Fetch request successful:", data);
+        // Note: In no-cors mode, the response is opaque and cannot be read.
+        console.log("Fetch request sent (response is opaque).");
       } catch (error) {
         console.error("Error during fetch request:", error);
       }
     }
-
-    // Send the preflight request automatically when the page loads
-    window.addEventListener('load', () => {
-      console.log("Page loaded. Sending preflight request...");
-      sendPreflightRequest();
-    });
 
     // Attach the fetch request to the button click
     document.getElementById('fetchButton').addEventListener('click', () => {
