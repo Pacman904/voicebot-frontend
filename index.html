@@ -3,38 +3,78 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Test Supabase with no-cors</title>
+  <title>Convex Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #f4f4f4;
+    }
+    .container {
+      text-align: center;
+      background-color: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    #onAir {
+      margin-top: 20px;
+      font-size: 24px;
+      color: red;
+      display: none;
+    }
+  </style>
 </head>
 <body>
-  <h1>Test Supabase with no-cors</h1>
-  <button id="fetchButton">Start Fetch Request</button>
+  <div class="container">
+    <h1>Test Convex</h1>
+    <button id="fetchButton">Start Fetch Request</button>
+    <div id="onAir">ON AIR</div>
+  </div>
 
-  <script>
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl6a25ucWphc2ZscnZienNydXZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzg2NTcyMzgsImV4cCI6MjA1NDIzMzIzOH0.6_0kCMuCHM5N2UCFx6CO1abNREd73c8buyAtCchAmIE'; // Replace with your actual anon key
+  <script type="module">
+    import { ConvexClient } from "https://cdn.jsdelivr.net/npm/convex/browser.js";
 
-    // Function to send the fetch request with no-cors mode
+    // Initialize the Convex client
+    const convex = new ConvexClient("https://your-convex-deployment-url.convex.cloud");
+
+    // Get references to UI elements
+    const fetchButton = document.getElementById('fetchButton');
+    const onAirElement = document.getElementById('onAir');
+
+    // Function to call the Convex Cloud Function
     async function fetchIceServersAndSession() {
       try {
-        console.log("Sending fetch (GET) request with no-cors...");
-        const response = await fetch("https://yzknnqjasflrvbzsruvd.supabase.co/functions/v1/create_session", {
-          method: "GET",
-          headers: {
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          mode: 'no-cors' // Temporarily bypass CORS
-        });
+        console.log("Calling Convex function...");
+        onAirElement.style.display = 'block'; // Show "ON AIR"
 
-        // Note: In no-cors mode, the response is opaque and cannot be read.
-        console.log("Fetch request sent (response is opaque).");
+        const response = await convex.mutation("createSession").send();
+        console.log("Function call successful:", response);
       } catch (error) {
-        console.error("Error during fetch request:", error);
+        console.error("Error during function call:", error);
+      } finally {
+        onAirElement.style.display = 'none'; // Hide "ON AIR"
       }
     }
 
-    // Attach the fetch request to the button click
-    document.getElementById('fetchButton').addEventListener('click', () => {
-      console.log("Button clicked. Sending fetch request...");
+    // Attach the function call to the button click
+    fetchButton.addEventListener('click', () => {
+      console.log("Button clicked. Calling Convex function...");
       fetchIceServersAndSession();
     });
   </script>
