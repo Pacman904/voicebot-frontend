@@ -50,7 +50,7 @@
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
     // Initialisiere Parse
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM"); // Ersetze durch deine Back4App-Anmeldeinformationen
+    Parse.initialize("YOUR_APP_ID", "YOUR_JAVASCRIPT_KEY"); // Ersetze durch deine Back4App-Anmeldeinformationen
     Parse.serverURL = "https://parseapi.back4app.com"; // Standard-Server-URL für Back4App
 
     // Hole Referenzen auf UI-Elemente
@@ -70,12 +70,41 @@
         });
 
         console.log("Cloud-Funktionsaufruf erfolgreich:", response);
+
+        // Extrahiere die zurückgegebenen Daten
+        const { clientSecret, iceServers } = response;
+
+        // Verwende die Daten (z.B. für WebRTC)
+        initializeWebRTC(clientSecret, iceServers);
       } catch (error) {
         console.error("Fehler beim Cloud-Funktionsaufruf:", error.message || error);
         alert("Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut.");
       } finally {
         onAirElement.style.display = 'none'; // Verstecke "ON AIR"
       }
+    }
+
+    // Beispiel: Initialisiere WebRTC mit den erhaltenen Daten
+    function initializeWebRTC(clientSecret, iceServers) {
+      console.log("Initialisiere WebRTC mit folgenden Daten:");
+      console.log("Client Secret:", clientSecret);
+      console.log("ICE Servers:", iceServers);
+
+      // Beispiel: Erstelle eine RTCPeerConnection
+      const peerConnection = new RTCPeerConnection({ iceServers });
+
+      // Füge Event Listener hinzu
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log("Neuer ICE-Kandidat gefunden:", event.candidate);
+        }
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        console.log("Verbindungsstatus geändert:", peerConnection.connectionState);
+      };
+
+      // Weitere WebRTC-Logik hier implementieren...
     }
 
     // Verbinde den Funktionsaufruf mit dem Button-Klick
