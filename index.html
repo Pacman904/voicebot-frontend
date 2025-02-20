@@ -115,20 +115,40 @@
     async function simulateSignaling(clientSecret) {
       console.log("Simuliere Signaling mit Client Secret:", clientSecret);
 
-      // Beispiel: Sende SDP- und ICE-Kandidaten an das Backend
-      const localDescription = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(localDescription);
+      try {
+        // Erstelle ein SDP-Angebot
+        const localDescription = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(localDescription);
 
-      // Sende die lokale Beschreibung an das Backend
-      await Parse.Cloud.run("sendSignalingData", {
-        sessionId: clientSecret,
-        data: peerConnection.localDescription
-      });
+        console.log("Lokale Beschreibung:", peerConnection.localDescription);
 
-      // Hole die Remote-Beschreibung vom Backend
-      const remoteData = await Parse.Cloud.run("getSignalingData", { sessionId: clientSecret });
-      const remoteDescription = new RTCSessionDescription(remoteData[0]);
-      await peerConnection.setRemoteDescription(remoteDescription);
+        // Konvertiere RTCSessionDescription in ein einfaches Objekt
+        const signalingData = {
+          type: peerConnection.localDescription.type,
+          sdp: peerConnection.localDescription.sdp
+        };
+
+        console.log("Signaling-Daten:", signalingData);
+
+        // Sende die lokale Beschreibung an das Backend
+        await Parse.Cloud.run("sendSignalingData", {
+          sessionId: clientSecret,
+          data: signalingData
+        });
+
+        console.log("Signaling-Daten erfolgreich gesendet.");
+
+        // Hole die Remote-Beschreibung vom Backend
+        const remoteData = await Parse.Cloud.run("getSignalingData", { sessionId: clientSecret });
+        console.log("Remote-Daten vom Backend:", remoteData);
+
+        const remoteDescription = new RTCSessionDescription(remoteData[0]);
+        await peerConnection.setRemoteDescription(remoteDescription);
+
+        console.log("Remote-Beschreibung erfolgreich gesetzt.");
+      } catch (error) {
+        console.error("Fehler beim Simulieren des Signalings:", error.message || error);
+      }
     }
 
     // Verbinde den Funktionsaufruf mit dem Button-Klick
