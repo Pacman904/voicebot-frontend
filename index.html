@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Back4App Test</title>
+  <title>WebRTC with Back4App</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -42,23 +42,25 @@
 </head>
 <body>
   <div class="container">
-    <h1>Test Back4App</h1>
-    <button id="fetchButton">Start Fetch Request</button>
+    <h1>WebRTC Test</h1>
+    <button id="startButton">Start Connection</button>
     <div id="onAir">ON AIR</div>
   </div>
 
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
     // Initialisiere Parse
-    Parse.initialize("YOUR_APP_ID", "YOUR_JAVASCRIPT_KEY"); // Ersetze durch deine Back4App-Anmeldeinformationen
+    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM"); // Ersetze durch deine Back4App-Anmeldeinformationen
     Parse.serverURL = "https://parseapi.back4app.com"; // Standard-Server-URL für Back4App
 
     // Hole Referenzen auf UI-Elemente
-    const fetchButton = document.getElementById('fetchButton');
+    const startButton = document.getElementById('startButton');
     const onAirElement = document.getElementById('onAir');
 
+    let peerConnection;
+
     // Funktion zum Aufrufen der Cloud-Funktion
-    async function fetchIceServersAndSession() {
+    async function startConnection() {
       try {
         console.log("Aufruf der Cloud-Funktion...");
         onAirElement.style.display = 'block'; // Zeige "ON AIR"
@@ -74,8 +76,11 @@
         // Extrahiere die zurückgegebenen Daten
         const { clientSecret, iceServers } = response;
 
-        // Verwende die Daten (z.B. für WebRTC)
-        initializeWebRTC(clientSecret, iceServers);
+        // Initialisiere WebRTC
+        initializeWebRTC(iceServers);
+
+        // Simuliere Signaling (optional)
+        simulateSignaling(clientSecret);
       } catch (error) {
         console.error("Fehler beim Cloud-Funktionsaufruf:", error.message || error);
         alert("Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut.");
@@ -84,19 +89,18 @@
       }
     }
 
-    // Beispiel: Initialisiere WebRTC mit den erhaltenen Daten
-    function initializeWebRTC(clientSecret, iceServers) {
-      console.log("Initialisiere WebRTC mit folgenden Daten:");
-      console.log("Client Secret:", clientSecret);
-      console.log("ICE Servers:", iceServers);
+    // Initialisiere WebRTC
+    function initializeWebRTC(iceServers) {
+      console.log("Initialisiere WebRTC mit folgenden ICE-Servern:", iceServers);
 
-      // Beispiel: Erstelle eine RTCPeerConnection
-      const peerConnection = new RTCPeerConnection({ iceServers });
+      // Erstelle eine RTCPeerConnection
+      peerConnection = new RTCPeerConnection({ iceServers });
 
       // Füge Event Listener hinzu
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
           console.log("Neuer ICE-Kandidat gefunden:", event.candidate);
+          // Send the ICE candidate to the other peer via signaling
         }
       };
 
@@ -107,10 +111,30 @@
       // Weitere WebRTC-Logik hier implementieren...
     }
 
+    // Simuliere Signaling (optional)
+    async function simulateSignaling(clientSecret) {
+      console.log("Simuliere Signaling mit Client Secret:", clientSecret);
+
+      // Beispiel: Sende SDP- und ICE-Kandidaten an das Backend
+      const localDescription = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(localDescription);
+
+      // Sende die lokale Beschreibung an das Backend
+      await Parse.Cloud.run("sendSignalingData", {
+        sessionId: clientSecret,
+        data: peerConnection.localDescription
+      });
+
+      // Hole die Remote-Beschreibung vom Backend
+      const remoteData = await Parse.Cloud.run("getSignalingData", { sessionId: clientSecret });
+      const remoteDescription = new RTCSessionDescription(remoteData[0]);
+      await peerConnection.setRemoteDescription(remoteDescription);
+    }
+
     // Verbinde den Funktionsaufruf mit dem Button-Klick
-    fetchButton.addEventListener('click', () => {
-      console.log("Button geklickt. Rufe Cloud-Funktion auf...");
-      fetchIceServersAndSession();
+    startButton.addEventListener('click', () => {
+      console.log("Button geklickt. Starte WebRTC-Verbindung...");
+      startConnection();
     });
   </script>
 </body>
