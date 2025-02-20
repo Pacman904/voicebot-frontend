@@ -63,13 +63,16 @@
         console.log("Aufruf der Cloud-Funktion...");
         onAirElement.style.display = 'block'; // Zeige "ON AIR"
 
+        // Rufe die Cloud-Funktion auf
         const response = await Parse.Cloud.run("createRealtimeSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
         });
+
         console.log("Cloud-Funktionsaufruf erfolgreich:", response);
       } catch (error) {
-        console.error("Fehler beim Cloud-Funktionsaufruf:", error);
+        console.error("Fehler beim Cloud-Funktionsaufruf:", error.message || error);
+        alert("Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut.");
       } finally {
         onAirElement.style.display = 'none'; // Verstecke "ON AIR"
       }
