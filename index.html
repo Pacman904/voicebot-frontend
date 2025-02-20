@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebRTC with Back4App</title>
+  <title>Back4App Test</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -42,119 +42,43 @@
 </head>
 <body>
   <div class="container">
-    <h1>WebRTC Test</h1>
-    <button id="startButton">Start Connection</button>
+    <h1>Test Back4App</h1>
+    <button id="fetchButton">Start Fetch Request</button>
     <div id="onAir">ON AIR</div>
   </div>
 
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
     // Initialisiere Parse
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM"); // Ersetze durch deine Back4App-Anmeldeinformationen
+    Parse.initialize("YOUR_APP_ID", "YOUR_JAVASCRIPT_KEY"); // Ersetze durch deine Back4App-Anmeldeinformationen
     Parse.serverURL = "https://parseapi.back4app.com"; // Standard-Server-URL für Back4App
 
     // Hole Referenzen auf UI-Elemente
-    const startButton = document.getElementById('startButton');
+    const fetchButton = document.getElementById('fetchButton');
     const onAirElement = document.getElementById('onAir');
 
-    let peerConnection;
-
     // Funktion zum Aufrufen der Cloud-Funktion
-    async function startConnection() {
+    async function fetchIceServersAndSession() {
       try {
         console.log("Aufruf der Cloud-Funktion...");
         onAirElement.style.display = 'block'; // Zeige "ON AIR"
 
-        // Rufe die Cloud-Funktion auf
         const response = await Parse.Cloud.run("createRealtimeSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
         });
-
         console.log("Cloud-Funktionsaufruf erfolgreich:", response);
-
-        // Extrahiere die zurückgegebenen Daten
-        const { clientSecret, iceServers } = response;
-
-        // Initialisiere WebRTC
-        initializeWebRTC(iceServers);
-
-        // Simuliere Signaling (optional)
-        simulateSignaling(clientSecret);
       } catch (error) {
-        console.error("Fehler beim Cloud-Funktionsaufruf:", error.message || error);
-        alert("Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut.");
+        console.error("Fehler beim Cloud-Funktionsaufruf:", error);
       } finally {
         onAirElement.style.display = 'none'; // Verstecke "ON AIR"
       }
     }
 
-    // Initialisiere WebRTC
-    function initializeWebRTC(iceServers) {
-      console.log("Initialisiere WebRTC mit folgenden ICE-Servern:", iceServers);
-
-      // Erstelle eine RTCPeerConnection
-      peerConnection = new RTCPeerConnection({ iceServers });
-
-      // Füge Event Listener hinzu
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          console.log("Neuer ICE-Kandidat gefunden:", event.candidate);
-          // Send the ICE candidate to the other peer via signaling
-        }
-      };
-
-      peerConnection.onconnectionstatechange = () => {
-        console.log("Verbindungsstatus geändert:", peerConnection.connectionState);
-      };
-
-      // Weitere WebRTC-Logik hier implementieren...
-    }
-
-    // Simuliere Signaling (optional)
-    async function simulateSignaling(clientSecret) {
-      console.log("Simuliere Signaling mit Client Secret:", clientSecret);
-
-      try {
-        // Erstelle ein SDP-Angebot
-        const localDescription = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(localDescription);
-
-        console.log("Lokale Beschreibung:", peerConnection.localDescription);
-
-        // Konvertiere RTCSessionDescription in ein einfaches Objekt
-        const signalingData = {
-          type: peerConnection.localDescription.type,
-          sdp: peerConnection.localDescription.sdp
-        };
-
-        console.log("Signaling-Daten:", signalingData);
-
-        // Sende die lokale Beschreibung an das Backend
-        await Parse.Cloud.run("sendSignalingData", {
-          sessionId: clientSecret,
-          data: signalingData
-        });
-
-        console.log("Signaling-Daten erfolgreich gesendet.");
-
-        // Hole die Remote-Beschreibung vom Backend
-        const remoteData = await Parse.Cloud.run("getSignalingData", { sessionId: clientSecret });
-        console.log("Remote-Daten vom Backend:", remoteData);
-
-        const remoteDescription = new RTCSessionDescription(remoteData[0]);
-        await peerConnection.setRemoteDescription(remoteDescription);
-
-        console.log("Remote-Beschreibung erfolgreich gesetzt.");
-      } catch (error) {
-        console.error("Fehler beim Simulieren des Signalings:", error.message || error);
-      }
-    }
-
     // Verbinde den Funktionsaufruf mit dem Button-Klick
-    startButton.addEventListener('click', () => {
-      console.log("Button geklickt. Starte WebRTC-Verbindung...");
-      startConnection();
+    fetchButton.addEventListener('click', () => {
+      console.log("Button geklickt. Rufe Cloud-Funktion auf...");
+      fetchIceServersAndSession();
     });
   </script>
 </body>
