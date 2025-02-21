@@ -61,29 +61,23 @@
     // Initialisiere WebRTC
     function initializeWebRTC(iceServers) {
       console.log("Initialisiere WebRTC mit ICE-Servern:", iceServers);
-
       const configuration = {
         iceServers: iceServers || [{
           urls: 'stun:stun.l.google.com:19302'
         }]
       };
-
       peerConnection = new RTCPeerConnection(configuration);
-
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
           console.log("Neuer ICE-Kandidat:", event.candidate);
         }
       };
-
       peerConnection.onconnectionstatechange = () => {
         console.log("Verbindungsstatus:", peerConnection.connectionState);
       };
-
       peerConnection.ontrack = (event) => {
         console.log("Neuer Track empfangen:", event.track);
       };
-
       return peerConnection;
     }
 
@@ -92,21 +86,16 @@
       try {
         console.log("Starte Verbindung...");
         onAirElement.style.display = 'block';
-
         const response = await Parse.Cloud.run("createRealtimeSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
         });
-
         console.log("Session erstellt:", response);
-
         if (!response.clientSecret || !response.iceServers) {
           throw new Error("Ungültige Server-Antwort");
         }
-
         initializeWebRTC(response.iceServers);
         await simulateSignaling(response.clientSecret);
-
       } catch (error) {
         console.error("Verbindungsfehler:", error);
         alert("Verbindungsfehler: " + error.message);
@@ -120,40 +109,32 @@
       if (!peerConnection) {
         throw new Error("WebRTC nicht initialisiert");
       }
-
       try {
         const offer = await peerConnection.createOffer({
           offerToReceiveAudio: true,
           offerToReceiveVideo: false
         });
-
         await peerConnection.setLocalDescription(offer);
-
         const signalingData = {
           type: offer.type,
           sdp: offer.sdp
         };
-
         const result = await Parse.Cloud.run("sendSignalingData", {
           sessionId: clientSecret,
           data: signalingData
         });
-
         if (!result.success) {
           throw new Error("Signaling-Daten konnten nicht gesendet werden");
         }
-
         const remoteData = await Parse.Cloud.run("getSignalingData", {
           sessionId: clientSecret
         });
-
         if (remoteData && remoteData.length > 0) {
           const remoteDescription = new RTCSessionDescription(remoteData[0]);
           await peerConnection.setRemoteDescription(remoteDescription);
         } else {
           throw new Error("Keine Remote-Daten empfangen");
         }
-
       } catch (error) {
         console.error("Signaling-Fehler:", error);
         throw error;
@@ -172,4 +153,3 @@
   </script>
 </body>
 </html>
-
