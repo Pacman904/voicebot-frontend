@@ -16,109 +16,104 @@
   </div>
 
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
-  <script>
-    // Parse Initialisierung
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
-    Parse.serverURL = "https://parseapi.back4app.com";
+  // ... unveränderter CSS und HTML-Teil ...
 
-    let peerConnection = null;
-    const startButton = document.getElementById('startButton');
-    const onAirElement = document.getElementById('onAir');
+<script>
+  // Initialisiere Parse
+  Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
+  Parse.serverURL = "https://parseapi.back4app.com";
 
-    // WebRTC Initialisierung
-    function initializeWebRTC(iceServers) {
-      const config = {
-        iceServers: iceServers || [{ urls: 'stun:stun.l.google.com:19302' }]
-      };
+  let peerConnection = null;
+  const startButton = document.getElementById('startButton');
+  const onAirElement = document.getElementById('onAir');
 
-      peerConnection = new RTCPeerConnection(config);
+  async function initializeWebRTC(iceServers) {
+    const configuration = {
+      iceServers: iceServers,
+      iceCandidatePoolSize: 10
+    };
 
-      peerConnection.onicecandidate = e => {
-        if (e.candidate) console.log("ICE Candidate:", e.candidate);
-      };
+    peerConnection = new RTCPeerConnection(configuration);
 
-      peerConnection.onconnectionstatechange = () => {
-        console.log("Connection State:", peerConnection.connectionState);
-        if (peerConnection.connectionState === 'connected') {
-          onAirElement.style.display = 'block';
-        }
-      };
-
-      return peerConnection;
-    }
-
-    // Verbindungsaufbau
-    async function startConnection() {
-      try {
-        startButton.disabled = true;
-        console.log("Starting connection...");
-
-        // Cloud-Funktion mit erweitertem Error-Handling
-        const response = await Parse.Cloud.run("createRealtimeSession", {
-          model: "gpt-4o-mini-realtime-preview-2024-12-17",
-          voice: "verse"
-        }, { useMasterKey: false });
-
-        console.log("Server Response:", response);
-
-        if (!response?.clientSecret || !response?.iceServers) {
-          throw new Error("Invalid server response format");
-        }
-
-        initializeWebRTC(response.iceServers);
-        await handleSignaling(response.clientSecret);
-
-      } catch (error) {
-        console.error("Connection Error:", error);
-        alert(`Error: ${error.message}`);
-        onAirElement.style.display = 'none';
-      } finally {
-        startButton.disabled = false;
+    // Event-Handler
+    peerConnection.onicecandidate = ({ candidate }) => {
+      if (candidate) {
+        console.log("Neuer ICE-Kandidat:", candidate);
       }
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      console.log("Verbindungsstatus:", peerConnection.connectionState);
+      onAirElement.style.display = 
+        peerConnection.connectionState === 'connected' ? 'block' : 'none';
+    };
+
+    return peerConnection;
+  }
+
+  async function startConnection() {
+    try {
+      startButton.disabled = true;
+      console.log("Starte Verbindung...");
+      
+      const response = await Parse.Cloud.run("createRealtimeSession", {
+        model: "gpt-4o-mini-realtime-preview-2024-12-17",
+        voice: "verse"
+      });
+
+      console.log("Session erstellt:", response);
+
+      await initializeWebRTC(response.iceServers);
+      await handleSignaling(response.clientSecret);
+
+    } catch (error) {
+      console.error("Verbindungsfehler:", error);
+      alert(`Fehler: ${error.message}`);
+    } finally {
+      startButton.disabled = false;
     }
+  }
 
-    // Signaling-Handler
-    async function handleSignaling(sessionId) {
-      try {
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
+  async function handleSignaling(sessionId) {
+    try {
+      // Create and set local offer
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
 
-        // Sende Offer an Server
-        await Parse.Cloud.run("sendSignalingData", {
-          sessionId: sessionId,
-          data: {
-            type: offer.type,
-            sdp: offer.sdp
-          }
-        });
+      // Send offer to server
+      await Parse.Cloud.run("sendSignalingData", {
+        sessionId: sessionId,
+        data: {
+          type: offer.type,
+          sdp: offer.sdp,
+          direction: 'client-to-server'
+        }
+      });
 
-        // Warte auf Answer vom Server
-        const answer = await new Promise((resolve, reject) => {
-          const interval = setInterval(async () => {
-            try {
-              const response = await Parse.Cloud.run("getSignalingData", { sessionId });
-              if (response.length > 0) {
-                clearInterval(interval);
-                resolve(response[0]);
-              }
-            } catch (error) {
-              clearInterval(interval);
-              reject(error);
-            }
-          }, 1000);
-        });
+      // Wait for server answer with retry logic
+      const answer = await waitForAnswer(sessionId);
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
 
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    } catch (error) {
+      console.error("Signaling-Fehler:", error);
+      throw error;
+    }
+  }
 
-      } catch (error) {
-        console.error("Signaling Error:", error);
-        throw error;
+  async function waitForAnswer(sessionId, retries = 5, delay = 1000) {
+    for (let i = 0; i < retries; i++) {
+      const response = await Parse.Cloud.run("getSignalingData", { sessionId });
+      if (response && response.type === 'answer') {
+        return response;
       }
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
+    throw new Error("Keine Antwort vom Server erhalten");
+  }
 
-    // Event Listeners
-    startButton.addEventListener('click', startConnection);
-    window.addEventListener('beforeunload', () => peerConnection?.close());
-  </script>
-</body>
-</html>
+  // Event Listener
+  startButton.addEventListener('click', startConnection);
+  window.addEventListener('beforeunload', () => {
+    if (peerConnection) peerConnection.close();
+  });
+</script>
