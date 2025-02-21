@@ -80,7 +80,7 @@
         initializeWebRTC(iceServers);
 
         // Simuliere Signaling (optional)
-        simulateSignaling(clientSecret);
+        simulateSignaling(clientSecret.value); // Verwende clientSecret.value
       } catch (error) {
         console.error("Fehler beim Cloud-Funktionsaufruf:", error.message || error);
         alert("Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut.");
