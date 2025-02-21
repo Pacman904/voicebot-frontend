@@ -50,112 +50,126 @@
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
     // Initialisiere Parse
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM"); // Ersetze durch deine Back4App-Anmeldeinformationen
-    Parse.serverURL = "https://parseapi.back4app.com"; // Standard-Server-URL für Back4App
+    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
+    Parse.serverURL = "https://parseapi.back4app.com";
 
-    // Hole Referenzen auf UI-Elemente
+    // Globale Variablen
+    let peerConnection = null;
     const startButton = document.getElementById('startButton');
     const onAirElement = document.getElementById('onAir');
 
-    let peerConnection;
+    // Initialisiere WebRTC
+    function initializeWebRTC(iceServers) {
+      console.log("Initialisiere WebRTC mit ICE-Servern:", iceServers);
 
-    // Funktion zum Aufrufen der Cloud-Funktion
+      const configuration = {
+        iceServers: iceServers || [{
+          urls: 'stun:stun.l.google.com:19302'
+        }]
+      };
+
+      peerConnection = new RTCPeerConnection(configuration);
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log("Neuer ICE-Kandidat:", event.candidate);
+        }
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        console.log("Verbindungsstatus:", peerConnection.connectionState);
+      };
+
+      peerConnection.ontrack = (event) => {
+        console.log("Neuer Track empfangen:", event.track);
+      };
+
+      return peerConnection;
+    }
+
+    // Starte die Verbindung
     async function startConnection() {
       try {
-        console.log("Aufruf der Cloud-Funktion...");
-        onAirElement.style.display = 'block'; // Zeige "ON AIR"
+        console.log("Starte Verbindung...");
+        onAirElement.style.display = 'block';
 
-        // Rufe die Cloud-Funktion auf
         const response = await Parse.Cloud.run("createRealtimeSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
         });
 
-        console.log("Cloud-Funktionsaufruf erfolgreich:", response);
+        console.log("Session erstellt:", response);
 
-        // Extrahiere die zurückgegebenen Daten
-        const { clientSecret, iceServers } = response;
+        if (!response.clientSecret || !response.iceServers) {
+          throw new Error("Ungültige Server-Antwort");
+        }
 
-        // Initialisiere WebRTC
-        initializeWebRTC(iceServers);
+        initializeWebRTC(response.iceServers);
+        await simulateSignaling(response.clientSecret);
 
-        // Simuliere Signaling (optional)
-        simulateSignaling(clientSecret.value); // Verwende clientSecret.value
       } catch (error) {
-        console.error("Fehler beim Cloud-Funktionsaufruf:", error.message || error);
-        alert("Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut.");
+        console.error("Verbindungsfehler:", error);
+        alert("Verbindungsfehler: " + error.message);
       } finally {
-        onAirElement.style.display = 'none'; // Verstecke "ON AIR"
+        onAirElement.style.display = 'none';
       }
     }
 
-    // Initialisiere WebRTC
-    function initializeWebRTC(iceServers) {
-      console.log("Initialisiere WebRTC mit folgenden ICE-Servern:", iceServers);
-
-      // Erstelle eine RTCPeerConnection
-      peerConnection = new RTCPeerConnection({ iceServers });
-
-      // Füge Event Listener hinzu
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          console.log("Neuer ICE-Kandidat gefunden:", event.candidate);
-          // Send the ICE candidate to the other peer via signaling
-        }
-      };
-
-      peerConnection.onconnectionstatechange = () => {
-        console.log("Verbindungsstatus geändert:", peerConnection.connectionState);
-      };
-
-      // Weitere WebRTC-Logik hier implementieren...
-    }
-
-    // Simuliere Signaling (optional)
+    // Signaling-Prozess
     async function simulateSignaling(clientSecret) {
-      console.log("Simuliere Signaling mit Client Secret:", clientSecret);
+      if (!peerConnection) {
+        throw new Error("WebRTC nicht initialisiert");
+      }
 
       try {
-        // Erstelle ein SDP-Angebot
-        const localDescription = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(localDescription);
+        const offer = await peerConnection.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: false
+        });
 
-        console.log("Lokale Beschreibung:", peerConnection.localDescription);
+        await peerConnection.setLocalDescription(offer);
 
-        // Konvertiere RTCSessionDescription in ein einfaches Objekt
         const signalingData = {
-          type: peerConnection.localDescription.type,
-          sdp: peerConnection.localDescription.sdp
+          type: offer.type,
+          sdp: offer.sdp
         };
 
-        console.log("Signaling-Daten:", signalingData);
-
-        // Sende die lokale Beschreibung an das Backend
-        await Parse.Cloud.run("sendSignalingData", {
+        const result = await Parse.Cloud.run("sendSignalingData", {
           sessionId: clientSecret,
           data: signalingData
         });
 
-        console.log("Signaling-Daten erfolgreich gesendet.");
+        if (!result.success) {
+          throw new Error("Signaling-Daten konnten nicht gesendet werden");
+        }
 
-        // Hole die Remote-Beschreibung vom Backend
-        const remoteData = await Parse.Cloud.run("getSignalingData", { sessionId: clientSecret });
-        console.log("Remote-Daten vom Backend:", remoteData);
+        const remoteData = await Parse.Cloud.run("getSignalingData", {
+          sessionId: clientSecret
+        });
 
-        const remoteDescription = new RTCSessionDescription(remoteData[0]);
-        await peerConnection.setRemoteDescription(remoteDescription);
+        if (remoteData && remoteData.length > 0) {
+          const remoteDescription = new RTCSessionDescription(remoteData[0]);
+          await peerConnection.setRemoteDescription(remoteDescription);
+        } else {
+          throw new Error("Keine Remote-Daten empfangen");
+        }
 
-        console.log("Remote-Beschreibung erfolgreich gesetzt.");
       } catch (error) {
-        console.error("Fehler beim Simulieren des Signalings:", error.message || error);
+        console.error("Signaling-Fehler:", error);
+        throw error;
       }
     }
 
-    // Verbinde den Funktionsaufruf mit dem Button-Klick
-    startButton.addEventListener('click', () => {
-      console.log("Button geklickt. Starte WebRTC-Verbindung...");
-      startConnection();
+    // Event Listener
+    startButton.addEventListener('click', startConnection);
+
+    // Cleanup-Funktion
+    window.addEventListener('beforeunload', () => {
+      if (peerConnection) {
+        peerConnection.close();
+      }
     });
   </script>
 </body>
 </html>
+
