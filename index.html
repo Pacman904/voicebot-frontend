@@ -199,4 +199,24 @@
           sessionId: sessionId,
           data: data
         });
-        if (!result.success
+        if (!result.success) {
+          throw new Error("Signaling-Daten konnten nicht gesendet werden");
+        }
+      } catch (error) {
+        console.error("Fehler beim Senden der Signaling-Daten:", error);
+        throw error;
+      }
+    }
+
+    // Event Listener
+    startButton.addEventListener('click', startConnection);
+
+    // Cleanup-Funktion
+    window.addEventListener('beforeunload', () => {
+      if (peerConnection) {
+        peerConnection.close();
+      }
+    });
+  </script>
+</body>
+</html>
