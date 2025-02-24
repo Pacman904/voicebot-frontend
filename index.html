@@ -161,6 +161,31 @@
           }, 1000);
         });
         await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+
+        // Sende das SDP-Angebot an OpenAI
+        const baseUrl = "https://api.openai.com/v1/realtime";
+        const model = "gpt-4o-mini-realtime-preview-2024-12-17";
+        const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
+          method: "POST",
+          body: offer.sdp,
+          headers: {
+            Authorization: `Bearer ${sessionId}`,
+            "Content-Type": "application/sdp"
+          },
+        });
+
+        if (!sdpResponse.ok) {
+          const errorData = await sdpResponse.json();
+          throw new Error(`Failed to send SDP offer: ${errorData.error?.message || "Unknown error"}`);
+        }
+
+        const answerSdp = await sdpResponse.text();
+        const answerDescription = {
+          type: "answer",
+          sdp: answerSdp
+        };
+
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(answerDescription));
       } catch (error) {
         console.error("Signaling-Fehler:", error);
         throw error;
@@ -174,24 +199,4 @@
           sessionId: sessionId,
           data: data
         });
-        if (!result.success) {
-          throw new Error("Signaling-Daten konnten nicht gesendet werden");
-        }
-      } catch (error) {
-        console.error("Fehler beim Senden der Signaling-Daten:", error);
-        throw error;
-      }
-    }
-
-    // Event Listener
-    startButton.addEventListener('click', startConnection);
-
-    // Cleanup-Funktion
-    window.addEventListener('beforeunload', () => {
-      if (peerConnection) {
-        peerConnection.close();
-      }
-    });
-  </script>
-</body>
-</html>
+        if (!result.success
