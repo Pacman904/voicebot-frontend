@@ -58,7 +58,7 @@
     const onAirElement = document.getElementById('onAir');
 
     // Initialisiere WebRTC
-    function initializeWebRTC(iceServers) {
+    function initializeWebRTC(iceServers, ephemeralKey) {
       console.log("Initialisiere WebRTC mit ICE-Servern:", iceServers);
       const configuration = {
         iceServers: iceServers || [{
@@ -69,6 +69,11 @@
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
           console.log("Neuer ICE-Kandidat:", event.candidate);
+          // Send the ICE candidate to the other peer via signaling
+          sendSignalingData(ephemeralKey, {
+            type: "candidate",
+            candidate: event.candidate
+          });
         }
       };
       peerConnection.onconnectionstatechange = () => {
@@ -79,7 +84,19 @@
       };
       peerConnection.ontrack = (event) => {
         console.log("Neuer Track empfangen:", event.track);
+        const audioEl = document.createElement("audio");
+        audioEl.autoplay = true;
+        audioEl.srcObject = event.streams[0];
+        document.body.appendChild(audioEl);
       };
+
+      // Setze up Data Channel
+      const dc = peerConnection.createDataChannel("oai-events");
+      dc.addEventListener("message", (e) => {
+        const realtimeEvent = JSON.parse(e.data);
+        console.log("Realtime Event:", realtimeEvent);
+      });
+
       return peerConnection;
     }
 
@@ -88,7 +105,7 @@
       try {
         console.log("Starte Verbindung...");
         onAirElement.style.display = 'block';
-        const response = await Parse.Cloud.run("createRealtimeSession", {
+        const response = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
         }, { useMasterKey: false });
@@ -96,7 +113,7 @@
         if (!response.clientSecret || !response.iceServers) {
           throw new Error("Ungültige Server-Antwort");
         }
-        initializeWebRTC(response.iceServers);
+        initializeWebRTC(response.iceServers, response.clientSecret);
         await handleSignaling(response.clientSecret);
       } catch (error) {
         console.error("Verbindungsfehler:", error);
@@ -146,6 +163,22 @@
         await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
       } catch (error) {
         console.error("Signaling-Fehler:", error);
+        throw error;
+      }
+    }
+
+    // Sende Signaling-Daten an das Backend
+    async function sendSignalingData(sessionId, data) {
+      try {
+        const result = await Parse.Cloud.run("sendSignalingData", {
+          sessionId: sessionId,
+          data: data
+        });
+        if (!result.success) {
+          throw new Error("Signaling-Daten konnten nicht gesendet werden");
+        }
+      } catch (error) {
+        console.error("Fehler beim Senden der Signaling-Daten:", error);
         throw error;
       }
     }
