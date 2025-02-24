@@ -145,6 +145,7 @@
         if (!result.success) {
           throw new Error("Signaling-Daten konnten nicht gesendet werden");
         }
+
         // Warte auf Answer vom Server
         const answer = await new Promise((resolve, reject) => {
           const interval = setInterval(async () => {
@@ -160,6 +161,8 @@
             }
           }, 1000);
         });
+
+        // Setze die Remote-Description
         await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
 
         // Sende das SDP-Angebot an OpenAI
