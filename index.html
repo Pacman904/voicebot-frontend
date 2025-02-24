@@ -5,7 +5,39 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WebRTC with Back4App</title>
   <style>
-    /* Unveränderte CSS-Styles */
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #f4f4f4;
+    }
+    .container {
+      text-align: center;
+      background-color: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    #onAir {
+      margin-top: 20px;
+      font-size: 24px;
+      color: red;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -14,106 +46,119 @@
     <button id="startButton">Start Connection</button>
     <div id="onAir">ON AIR</div>
   </div>
-
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
-  // ... unveränderter CSS und HTML-Teil ...
+  <script>
+    // Initialisiere Parse
+    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
+    Parse.serverURL = "https://parseapi.back4app.com";
 
-<script>
-  // Initialisiere Parse
-  Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
-  Parse.serverURL = "https://parseapi.back4app.com";
+    // Globale Variablen
+    let peerConnection = null;
+    const startButton = document.getElementById('startButton');
+    const onAirElement = document.getElementById('onAir');
 
-  let peerConnection = null;
-  const startButton = document.getElementById('startButton');
-  const onAirElement = document.getElementById('onAir');
-
-  async function initializeWebRTC(iceServers) {
-    const configuration = {
-      iceServers: iceServers,
-      iceCandidatePoolSize: 10
-    };
-
-    peerConnection = new RTCPeerConnection(configuration);
-
-    // Event-Handler
-    peerConnection.onicecandidate = ({ candidate }) => {
-      if (candidate) {
-        console.log("Neuer ICE-Kandidat:", candidate);
-      }
-    };
-
-    peerConnection.onconnectionstatechange = () => {
-      console.log("Verbindungsstatus:", peerConnection.connectionState);
-      onAirElement.style.display = 
-        peerConnection.connectionState === 'connected' ? 'block' : 'none';
-    };
-
-    return peerConnection;
-  }
-
-  async function startConnection() {
-    try {
-      startButton.disabled = true;
-      console.log("Starte Verbindung...");
-      
-      const response = await Parse.Cloud.run("createRealtimeSession", {
-        model: "gpt-4o-mini-realtime-preview-2024-12-17",
-        voice: "verse"
-      });
-
-      console.log("Session erstellt:", response);
-
-      await initializeWebRTC(response.iceServers);
-      await handleSignaling(response.clientSecret);
-
-    } catch (error) {
-      console.error("Verbindungsfehler:", error);
-      alert(`Fehler: ${error.message}`);
-    } finally {
-      startButton.disabled = false;
-    }
-  }
-
-  async function handleSignaling(sessionId) {
-    try {
-      // Create and set local offer
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-
-      // Send offer to server
-      await Parse.Cloud.run("sendSignalingData", {
-        sessionId: sessionId,
-        data: {
-          type: offer.type,
-          sdp: offer.sdp,
-          direction: 'client-to-server'
+    // Initialisiere WebRTC
+    function initializeWebRTC(iceServers) {
+      console.log("Initialisiere WebRTC mit ICE-Servern:", iceServers);
+      const configuration = {
+        iceServers: iceServers || [{
+          urls: 'stun:stun.l.google.com:19302'
+        }]
+      };
+      peerConnection = new RTCPeerConnection(configuration);
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log("Neuer ICE-Kandidat:", event.candidate);
         }
-      });
-
-      // Wait for server answer with retry logic
-      const answer = await waitForAnswer(sessionId);
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-
-    } catch (error) {
-      console.error("Signaling-Fehler:", error);
-      throw error;
+      };
+      peerConnection.onconnectionstatechange = () => {
+        console.log("Verbindungsstatus:", peerConnection.connectionState);
+        if (peerConnection.connectionState === 'connected') {
+          onAirElement.style.display = 'block';
+        }
+      };
+      peerConnection.ontrack = (event) => {
+        console.log("Neuer Track empfangen:", event.track);
+      };
+      return peerConnection;
     }
-  }
 
-  async function waitForAnswer(sessionId, retries = 5, delay = 1000) {
-    for (let i = 0; i < retries; i++) {
-      const response = await Parse.Cloud.run("getSignalingData", { sessionId });
-      if (response && response.type === 'answer') {
-        return response;
+    // Starte die Verbindung
+    async function startConnection() {
+      try {
+        console.log("Starte Verbindung...");
+        onAirElement.style.display = 'block';
+        const response = await Parse.Cloud.run("createRealtimeSession", {
+          model: "gpt-4o-mini-realtime-preview-2024-12-17",
+          voice: "verse"
+        }, { useMasterKey: false });
+        console.log("Session erstellt:", response);
+        if (!response.clientSecret || !response.iceServers) {
+          throw new Error("Ungültige Server-Antwort");
+        }
+        initializeWebRTC(response.iceServers);
+        await handleSignaling(response.clientSecret);
+      } catch (error) {
+        console.error("Verbindungsfehler:", error);
+        alert("Verbindungsfehler: " + error.message);
+      } finally {
+        onAirElement.style.display = 'none';
       }
-      await new Promise(resolve => setTimeout(resolve, delay));
     }
-    throw new Error("Keine Antwort vom Server erhalten");
-  }
 
-  // Event Listener
-  startButton.addEventListener('click', startConnection);
-  window.addEventListener('beforeunload', () => {
-    if (peerConnection) peerConnection.close();
-  });
-</script>
+    // Signaling-Prozess
+    async function handleSignaling(sessionId) {
+      if (!peerConnection) {
+        throw new Error("WebRTC nicht initialisiert");
+      }
+      try {
+        const offer = await peerConnection.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: false
+        });
+        await peerConnection.setLocalDescription(offer);
+        const signalingData = {
+          type: offer.type,
+          sdp: offer.sdp
+        };
+        const result = await Parse.Cloud.run("sendSignalingData", {
+          sessionId: sessionId,
+          data: signalingData
+        });
+        if (!result.success) {
+          throw new Error("Signaling-Daten konnten nicht gesendet werden");
+        }
+        // Warte auf Answer vom Server
+        const answer = await new Promise((resolve, reject) => {
+          const interval = setInterval(async () => {
+            try {
+              const response = await Parse.Cloud.run("getSignalingData", { sessionId });
+              if (response.length > 0) {
+                clearInterval(interval);
+                resolve(response[0]);
+              }
+            } catch (error) {
+              clearInterval(interval);
+              reject(error);
+            }
+          }, 1000);
+        });
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+      } catch (error) {
+        console.error("Signaling-Fehler:", error);
+        throw error;
+      }
+    }
+
+    // Event Listener
+    startButton.addEventListener('click', startConnection);
+
+    // Cleanup-Funktion
+    window.addEventListener('beforeunload', () => {
+      if (peerConnection) {
+        peerConnection.close();
+      }
+    });
+  </script>
+</body>
+</html>
