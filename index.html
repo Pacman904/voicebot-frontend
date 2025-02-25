@@ -5,10 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WebRTC mit OpenAI</title>
   <style>
-    body { font-family: Arial; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f0f0; }
-    .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    button { padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
-    #onAir { margin-top: 15px; font-size: 20px; color: green; display: none; }
+    body { 
+      font-family: Arial; 
+      display: flex; 
+      justify-content: center; 
+      align-items: center; 
+      height: 100vh; 
+      background: #f0f0f0; 
+    }
+    .container { 
+      background: white; 
+      padding: 20px; 
+      border-radius: 8px; 
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+    }
+    button { 
+      padding: 12px 24px; 
+      background: #007bff; 
+      color: white; 
+      border: none; 
+      border-radius: 4px; 
+      cursor: pointer; 
+    }
+    #onAir { 
+      margin-top: 15px; 
+      font-size: 20px; 
+      color: green; 
+      display: none; 
+    }
   </style>
 </head>
 <body>
@@ -27,23 +51,25 @@
     const onAirElement = document.getElementById('onAir');
 
     // WebRTC-Initialisierung
-    function initializeWebRTC(iceServers, clientSecret) {
+    function initializeWebRTC(iceServers, clientSecret, parseSessionId) {
       const configuration = {
-        iceServers: iceServers || [{ urls: "stun:stun.l.google.com:19302" }]
+        iceServers: iceServers || [
+          { urls: "stun:stun.l.google.com:19302" }
+        ]
       };
+
       peerConnection = new RTCPeerConnection(configuration);
 
       peerConnection.onicecandidate = async (event) => {
         if (event.candidate) {
           console.log("ICE-Kandidat:", event.candidate);
           try {
-            //珊瑚修正：使用Parse-Session-ID (response.sessionId)
-            await sendSignalingData(response.sessionId, {
+            await sendSignalingData(parseSessionId, {
               type: "candidate",
-              candidate: event.candidate
+              candidate: event.candidate.candidate // <--- WICHTIG: Nur den String senden!
             });
           } catch (error) {
-            console.error("Fehler:", error);
+            console.error("Signaling-Fehler:", error);
           }
         }
       };
@@ -63,10 +89,10 @@
         document.body.appendChild(audioEl);
       };
 
-      // Data-Channel
+      // Data-Channel für Echtzeit-Ereignisse
       const dc = peerConnection.createDataChannel("oai-events");
       dc.addEventListener("message", (e) => {
-        console.log("Echtzeit-Ereignis:", JSON.parse(e.data));
+        console.log("Echtzeit-Ereignis von OpenAI:", JSON.parse(e.data));
       });
 
       return peerConnection;
@@ -78,7 +104,7 @@
         console.log("Verbindungsaufbau gestartet...");
         onAirElement.style.display = "block";
 
-        // Hole Session-Daten
+        // Hole Session-Daten vom Backend
         const response = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
@@ -90,8 +116,12 @@
           throw new Error("Ungültige Server-Antwort");
         }
 
-        // Initialisiere WebRTC
-        initializeWebRTC(response.iceServers, response.clientSecret);
+        // Initialisiere WebRTC mit korrekten Parametern
+        initializeWebRTC(
+          response.iceServers, 
+          response.clientSecret, 
+          response.sessionId
+        );
 
         // Signaling-Prozess
         await handleSignaling(response.sessionId);
@@ -152,10 +182,13 @@
     // Signaling-Daten senden
     async function sendSignalingData(sessionId, data) {
       try {
-        await Parse.Cloud.run("sendSignalingData", {
+        const result = await Parse.Cloud.run("sendSignalingData", {
           sessionId: sessionId,
-          data: data
+          data: data // Ensure data is a plain object (no RTCIceCandidate instances)
         });
+        if (!result.success) {
+          throw new Error("Signaling-Daten konnten nicht gesendet werden");
+        }
       } catch (error) {
         console.error("Signaling-Fehler:", error);
         throw error;
