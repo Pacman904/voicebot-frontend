@@ -133,14 +133,20 @@
         // Hole Mikrofon-Stream
         userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         userAudioEl.srcObject = userStream;
-        userStream.getAudioTracks().forEach(track => peerConnection.addTrack(track));
 
         // Initialisiere WebRTC
-        await initializeWebRTC(
+        peerConnection = await initializeWebRTC(
           response.iceServers, 
           response.clientSecret, 
           response.sessionId
         );
+
+        // Teile Audio-Track
+        userStream.getAudioTracks().forEach(track => {
+          if (peerConnection) {
+            peerConnection.addTrack(track, userStream);
+          }
+        });
 
         // Signaling-Prozess
         await handleSignaling(response.sessionId, response.clientSecret);
@@ -185,14 +191,14 @@
           throw new Error(`OpenAI-Fehler: ${errorData.error?.message || "Unbekannter Fehler"}`);
         }
 
-        // Setze SDP-Antwort von OpenAI
+        // Setze SDP-Antwort
         const answerSdp = await sdpResponse.text();
         await peerConnection.setRemoteDescription({
           type: "answer",
           sdp: answerSdp
         });
 
-        //珊瑚修正：Hole und verarbeite ICE-Kandidaten von Parse
+        // Hole ICE-Kandidaten von Parse
         const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId });
         signalingData.forEach(data => {
           if (data.type === "candidate") {
