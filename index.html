@@ -27,26 +27,24 @@
     const onAirElement = document.getElementById('onAir');
 
     // WebRTC-Initialisierung
-    function initializeWebRTC(iceServers, ephemeralKey) {
+    function initializeWebRTC(iceServers, clientSecret) {
       const configuration = {
-        iceServers: iceServers || [ // Fallback-ICE-Servers
-          { urls: "stun:stun.l.google.com:19302" },
-          { 
-            urls: "turn:your-turn-server.com", 
-            username: "default_user", 
-            credential: "default_password" 
-          }
-        ]
+        iceServers: iceServers || [{ urls: "stun:stun.l.google.com:19302" }]
       };
-
       peerConnection = new RTCPeerConnection(configuration);
-      peerConnection.onicecandidate = (event) => {
+
+      peerConnection.onicecandidate = async (event) => {
         if (event.candidate) {
           console.log("ICE-Kandidat:", event.candidate);
-          sendSignalingData(ephemeralKey, { 
-            type: "candidate", 
-            candidate: event.candidate 
-          });
+          try {
+            //珊瑚修正：使用Parse-Session-ID (response.sessionId)
+            await sendSignalingData(response.sessionId, {
+              type: "candidate",
+              candidate: event.candidate
+            });
+          } catch (error) {
+            console.error("Fehler:", error);
+          }
         }
       };
 
@@ -65,10 +63,10 @@
         document.body.appendChild(audioEl);
       };
 
-      // Data-Channel für Echtzeit-Ereignisse
+      // Data-Channel
       const dc = peerConnection.createDataChannel("oai-events");
       dc.addEventListener("message", (e) => {
-        console.log("Echtzeit-Ereignis von OpenAI:", JSON.parse(e.data));
+        console.log("Echtzeit-Ereignis:", JSON.parse(e.data));
       });
 
       return peerConnection;
@@ -80,33 +78,32 @@
         console.log("Verbindungsaufbau gestartet...");
         onAirElement.style.display = "block";
 
-        // Hole Session-Daten vom Backend
+        // Hole Session-Daten
         const response = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
         });
 
-        console.log("VOLLSTÄNDIGE SERVER-ANTWORT:", response); // NEU: Log der kompletten Response
+        console.log("VOLLSTÄNDIGE SERVER-ANTWORT:", response);
 
-        // Prüfe Response-Struktur
-        if (!response.clientSecret || !response.iceServers) {
-          throw new Error("Ungültige Server-Antwort: clientSecret oder iceServers fehlen");
+        if (!response.sessionId || !response.clientSecret || !response.iceServers) {
+          throw new Error("Ungültige Server-Antwort");
         }
 
         // Initialisiere WebRTC
         initializeWebRTC(response.iceServers, response.clientSecret);
 
         // Signaling-Prozess
-        await handleSignaling(response.clientSecret);
+        await handleSignaling(response.sessionId);
       } catch (error) {
         console.error("Fehler:", error);
-        alert(`Fehler: ${error.message}`);
+        alert(error.message);
       } finally {
         onAirElement.style.display = "none";
       }
     }
 
-    // Signaling-Logik
+    // Signaling-Funktion
     async function handleSignaling(sessionId) {
       if (!peerConnection) throw new Error("WebRTC nicht initialisiert");
 
@@ -124,12 +121,12 @@
           data: { type: "offer", sdp: offer.sdp }
         });
 
-        // Hole SDP-Antwort von OpenAI
+        // Sende SDP-Angebot an OpenAI
         const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
           method: "POST",
           body: offer.sdp,
           headers: {
-            Authorization: `Bearer ${sessionId}`,
+            Authorization: `Bearer ${response.clientSecret}`,
             "Content-Type": "application/sdp"
           }
         });
@@ -160,7 +157,7 @@
           data: data
         });
       } catch (error) {
-        console.error("Signaling-Daten konnten nicht gesendet werden:", error);
+        console.error("Signaling-Fehler:", error);
         throw error;
       }
     }
