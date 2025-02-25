@@ -3,43 +3,48 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebRTC mit OpenAI</title>
+  <title>WebRTC with OpenAI</title>
   <style>
-    body { 
-      font-family: Arial; 
-      display: flex; 
-      justify-content: center; 
-      align-items: center; 
-      height: 100vh; 
-      background: #f0f0f0; 
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #f4f4f4;
     }
-    .container { 
-      background: white; 
-      padding: 20px; 
-      border-radius: 8px; 
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+    .container {
+      text-align: center;
+      background-color: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     }
-    button { 
-      padding: 12px 24px; 
-      background: #007bff; 
-      color: white; 
-      border: none; 
-      border-radius: 4px; 
-      cursor: pointer; 
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
     }
-    #onAir { 
-      margin-top: 15px; 
-      font-size: 20px; 
-      color: green; 
-      display: none; 
+    button:hover {
+      background-color: #0056b3;
+    }
+    #onAir {
+      margin-top: 20px;
+      font-size: 24px;
+      color: green;
+      display: none;
     }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>WebRTC Test</h1>
-    <button id="startButton">Verbindung starten</button>
-    <div id="onAir">Verbunden!</div>
+    <button id="startButton">Start Connection</button>
+    <div id="onAir">CONNECTED</div>
   </div>
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
@@ -50,123 +55,122 @@
     const startButton = document.getElementById('startButton');
     const onAirElement = document.getElementById('onAir');
 
-    // WebRTC-Initialisierung
+    // Initialize WebRTC
     function initializeWebRTC(iceServers, clientSecret, parseSessionId) {
       const configuration = {
-        iceServers: iceServers || [
-          { urls: "stun:stun.l.google.com:19302" }
-        ]
+        iceServers: iceServers || [{ urls: "stun:stun.l.google.com:19302" }]
       };
-
       peerConnection = new RTCPeerConnection(configuration);
 
       peerConnection.onicecandidate = async (event) => {
         if (event.candidate) {
-          console.log("ICE-Kandidat:", event.candidate);
+          console.log("ICE Candidate:", event.candidate);
           try {
+            // Send ONLY the candidate string
             await sendSignalingData(parseSessionId, {
               type: "candidate",
-              candidate: event.candidate.candidate // <--- WICHTIG: Nur den String senden!
+              candidate: event.candidate.candidate //珊瑚修正：Extract candidate string
             });
           } catch (error) {
-            console.error("Signaling-Fehler:", error);
+            console.error("Signaling Error:", error);
           }
         }
       };
 
       peerConnection.onconnectionstatechange = () => {
-        console.log("Verbindungsstatus:", peerConnection.connectionState);
+        console.log("Connection state:", peerConnection.connectionState);
         if (peerConnection.connectionState === "connected") {
           onAirElement.style.display = "block";
         }
       };
 
       peerConnection.ontrack = (event) => {
-        console.log("Audio-Track empfangen:", event.track);
+        console.log("Audio Track received:", event.track);
         const audioEl = document.createElement("audio");
         audioEl.autoplay = true;
         audioEl.srcObject = event.streams[0];
         document.body.appendChild(audioEl);
       };
 
-      // Data-Channel für Echtzeit-Ereignisse
-      const dc = peerConnection.createDataChannel("oai-events");
+      // Setup data channel
+      const dc = peerConnection.createDataChannel("oaiControlEvents");
       dc.addEventListener("message", (e) => {
-        console.log("Echtzeit-Ereignis von OpenAI:", JSON.parse(e.data));
+        const event = JSON.parse(e.data);
+        console.log("OpenAI Realtime Event:", event);
       });
 
       return peerConnection;
     }
 
-    // Verbindung starten
+    // Start connection
     async function startConnection() {
       try {
-        console.log("Verbindungsaufbau gestartet...");
+        console.log("Starting connection...");
         onAirElement.style.display = "block";
 
-        // Hole Session-Daten vom Backend
+        // Get session data
         const response = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
         });
 
-        console.log("VOLLSTÄNDIGE SERVER-ANTWORT:", response);
+        console.log("Server Response:", response);
 
         if (!response.sessionId || !response.clientSecret || !response.iceServers) {
-          throw new Error("Ungültige Server-Antwort");
+          throw new Error("Invalid server response");
         }
 
-        // Initialisiere WebRTC mit korrekten Parametern
+        // Initialize WebRTC with correct parameters
         initializeWebRTC(
-          response.iceServers, 
-          response.clientSecret, 
-          response.sessionId
+          response.iceServers,
+          response.clientSecret,
+          response.sessionId //珊瑚修正：Use Parse session ID
         );
 
-        // Signaling-Prozess
-        await handleSignaling(response.sessionId);
+        // Signaling process
+        await handleSignaling(response.sessionId, response.clientSecret);
       } catch (error) {
-        console.error("Fehler:", error);
-        alert(error.message);
+        console.error("Connection Error:", error);
+        alert(`Error: ${error.message}`);
       } finally {
         onAirElement.style.display = "none";
       }
     }
 
-    // Signaling-Funktion
-    async function handleSignaling(sessionId) {
-      if (!peerConnection) throw new Error("WebRTC nicht initialisiert");
+    // Signaling logic
+    async function handleSignaling(sessionId, clientSecret) {
+      if (!peerConnection) throw new Error("WebRTC not initialized");
 
       try {
-        // Erstelle SDP-Angebot
+        // Create SDP offer
         const offer = await peerConnection.createOffer({
           offerToReceiveAudio: true,
           offerToReceiveVideo: false
         });
         await peerConnection.setLocalDescription(offer);
 
-        // Sende SDP-Angebot an Backend
+        // Send SDP offer to Parse backend
         await Parse.Cloud.run("sendSignalingData", {
           sessionId: sessionId,
           data: { type: "offer", sdp: offer.sdp }
         });
 
-        // Sende SDP-Angebot an OpenAI
+        // Send SDP offer to OpenAI
         const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
           method: "POST",
           body: offer.sdp,
           headers: {
-            Authorization: `Bearer ${response.clientSecret}`,
+            Authorization: `Bearer ${clientSecret}`,
             "Content-Type": "application/sdp"
           }
         });
 
         if (!sdpResponse.ok) {
           const errorData = await sdpResponse.json();
-          throw new Error(`OpenAI-Fehler: ${errorData.error?.message || "Unbekannter Fehler"}`);
+          throw new Error(`OpenAI Error: ${errorData.error?.message || "Unknown error"}`);
         }
 
-        // Setze SDP-Antwort
+        // Set remote description from OpenAI answer
         const answerSdp = await sdpResponse.text();
         await peerConnection.setRemoteDescription({
           type: "answer",
@@ -174,28 +178,28 @@
         });
 
       } catch (error) {
-        console.error("Signaling-Fehler:", error);
+        console.error("Signaling Error:", error);
         throw error;
       }
     }
 
-    // Signaling-Daten senden
+    // Send signaling data to Parse backend
     async function sendSignalingData(sessionId, data) {
       try {
         const result = await Parse.Cloud.run("sendSignalingData", {
           sessionId: sessionId,
-          data: data // Ensure data is a plain object (no RTCIceCandidate instances)
+          data: data //珊瑚修正：Ensure data is plain object
         });
         if (!result.success) {
-          throw new Error("Signaling-Daten konnten nicht gesendet werden");
+          throw new Error("Signaling data failed");
         }
       } catch (error) {
-        console.error("Signaling-Fehler:", error);
+        console.error("Signaling Error:", error);
         throw error;
       }
     }
 
-    // Event-Listener
+    // Event listeners
     startButton.addEventListener('click', startConnection);
 
     // Cleanup
