@@ -3,222 +3,174 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebRTC with Back4App</title>
+  <title>WebRTC mit OpenAI</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      background-color: #f4f4f4;
-    }
-    .container {
-      text-align: center;
-      background-color: white;
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    button {
-      padding: 10px 20px;
-      font-size: 16px;
-      cursor: pointer;
-      background-color: #007bff;
-      color: white;
-      border: none;
-      border-radius: 5px;
-    }
-    button:hover {
-      background-color: #0056b3;
-    }
-    #onAir {
-      margin-top: 20px;
-      font-size: 24px;
-      color: red;
-      display: none;
-    }
+    body { font-family: Arial; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f0f0; }
+    .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    button { padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    #onAir { margin-top: 15px; font-size: 20px; color: green; display: none; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>WebRTC Test</h1>
-    <button id="startButton">Start Connection</button>
-    <div id="onAir">ON AIR</div>
+    <button id="startButton">Verbindung starten</button>
+    <div id="onAir">Verbunden!</div>
   </div>
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
-    // Initialisiere Parse
     Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
-    Parse.serverURL = "https://parseapi.back4app.com";
+    Parse.serverURL = "https://parseapi.back4app.com/";
 
-    // Globale Variablen
     let peerConnection = null;
     const startButton = document.getElementById('startButton');
     const onAirElement = document.getElementById('onAir');
 
-    // Initialisiere WebRTC
+    // WebRTC-Initialisierung
     function initializeWebRTC(iceServers, ephemeralKey) {
-      console.log("Initialisiere WebRTC mit ICE-Servern:", iceServers);
       const configuration = {
-        iceServers: iceServers || [{
-          urls: 'stun:stun.l.google.com:19302'
-        }]
+        iceServers: iceServers || [ // Fallback-ICE-Servers
+          { urls: "stun:stun.l.google.com:19302" },
+          { 
+            urls: "turn:your-turn-server.com", 
+            username: "default_user", 
+            credential: "default_password" 
+          }
+        ]
       };
+
       peerConnection = new RTCPeerConnection(configuration);
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          console.log("Neuer ICE-Kandidat:", event.candidate);
-          // Send the ICE candidate to the other peer via signaling
-          sendSignalingData(ephemeralKey, {
-            type: "candidate",
-            candidate: event.candidate
+          console.log("ICE-Kandidat:", event.candidate);
+          sendSignalingData(ephemeralKey, { 
+            type: "candidate", 
+            candidate: event.candidate 
           });
         }
       };
+
       peerConnection.onconnectionstatechange = () => {
         console.log("Verbindungsstatus:", peerConnection.connectionState);
-        if (peerConnection.connectionState === 'connected') {
-          onAirElement.style.display = 'block';
+        if (peerConnection.connectionState === "connected") {
+          onAirElement.style.display = "block";
         }
       };
+
       peerConnection.ontrack = (event) => {
-        console.log("Neuer Track empfangen:", event.track);
+        console.log("Audio-Track empfangen:", event.track);
         const audioEl = document.createElement("audio");
         audioEl.autoplay = true;
         audioEl.srcObject = event.streams[0];
         document.body.appendChild(audioEl);
       };
 
-      // Setze up Data Channel
+      // Data-Channel für Echtzeit-Ereignisse
       const dc = peerConnection.createDataChannel("oai-events");
       dc.addEventListener("message", (e) => {
-        const realtimeEvent = JSON.parse(e.data);
-        console.log("Realtime Event:", realtimeEvent);
+        console.log("Echtzeit-Ereignis von OpenAI:", JSON.parse(e.data));
       });
 
       return peerConnection;
     }
 
-    // Starte die Verbindung
+    // Verbindung starten
     async function startConnection() {
       try {
-        console.log("Starte Verbindung...");
-        onAirElement.style.display = 'block';
+        console.log("Verbindungsaufbau gestartet...");
+        onAirElement.style.display = "block";
+
+        // Hole Session-Daten vom Backend
         const response = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
-        }, { useMasterKey: false });
-        console.log("Session erstellt:", response);
+        });
+
+        console.log("VOLLSTÄNDIGE SERVER-ANTWORT:", response); // NEU: Log der kompletten Response
+
+        // Prüfe Response-Struktur
         if (!response.clientSecret || !response.iceServers) {
-          throw new Error("Ungültige Server-Antwort");
+          throw new Error("Ungültige Server-Antwort: clientSecret oder iceServers fehlen");
         }
+
+        // Initialisiere WebRTC
         initializeWebRTC(response.iceServers, response.clientSecret);
+
+        // Signaling-Prozess
         await handleSignaling(response.clientSecret);
       } catch (error) {
-        console.error("Verbindungsfehler:", error);
-        alert("Verbindungsfehler: " + error.message);
+        console.error("Fehler:", error);
+        alert(`Fehler: ${error.message}`);
       } finally {
-        onAirElement.style.display = 'none';
+        onAirElement.style.display = "none";
       }
     }
 
-    // Signaling-Prozess
+    // Signaling-Logik
     async function handleSignaling(sessionId) {
-      if (!peerConnection) {
-        throw new Error("WebRTC nicht initialisiert");
-      }
+      if (!peerConnection) throw new Error("WebRTC nicht initialisiert");
+
       try {
+        // Erstelle SDP-Angebot
         const offer = await peerConnection.createOffer({
           offerToReceiveAudio: true,
           offerToReceiveVideo: false
         });
         await peerConnection.setLocalDescription(offer);
-        const signalingData = {
-          type: offer.type,
-          sdp: offer.sdp
-        };
-        const result = await Parse.Cloud.run("sendSignalingData", {
+
+        // Sende SDP-Angebot an Backend
+        await Parse.Cloud.run("sendSignalingData", {
           sessionId: sessionId,
-          data: signalingData
-        });
-        if (!result.success) {
-          throw new Error("Signaling-Daten konnten nicht gesendet werden");
-        }
-
-        // Warte auf Answer vom Server
-        const answer = await new Promise((resolve, reject) => {
-          const interval = setInterval(async () => {
-            try {
-              const response = await Parse.Cloud.run("getSignalingData", { sessionId });
-              if (response.length > 0) {
-                clearInterval(interval);
-                resolve(response[0]);
-              }
-            } catch (error) {
-              clearInterval(interval);
-              reject(error);
-            }
-          }, 1000);
+          data: { type: "offer", sdp: offer.sdp }
         });
 
-        // Setze die Remote-Description
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-
-        // Sende das SDP-Angebot an OpenAI
-        const baseUrl = "https://api.openai.com/v1/realtime";
-        const model = "gpt-4o-mini-realtime-preview-2024-12-17";
-        const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
+        // Hole SDP-Antwort von OpenAI
+        const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
           method: "POST",
           body: offer.sdp,
           headers: {
             Authorization: `Bearer ${sessionId}`,
             "Content-Type": "application/sdp"
-          },
+          }
         });
 
         if (!sdpResponse.ok) {
           const errorData = await sdpResponse.json();
-          throw new Error(`Failed to send SDP offer: ${errorData.error?.message || "Unknown error"}`);
+          throw new Error(`OpenAI-Fehler: ${errorData.error?.message || "Unbekannter Fehler"}`);
         }
 
+        // Setze SDP-Antwort
         const answerSdp = await sdpResponse.text();
-        const answerDescription = {
+        await peerConnection.setRemoteDescription({
           type: "answer",
           sdp: answerSdp
-        };
+        });
 
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answerDescription));
       } catch (error) {
         console.error("Signaling-Fehler:", error);
         throw error;
       }
     }
 
-    // Sende Signaling-Daten an das Backend
+    // Signaling-Daten senden
     async function sendSignalingData(sessionId, data) {
       try {
-        const result = await Parse.Cloud.run("sendSignalingData", {
+        await Parse.Cloud.run("sendSignalingData", {
           sessionId: sessionId,
           data: data
         });
-        if (!result.success) {
-          throw new Error("Signaling-Daten konnten nicht gesendet werden");
-        }
       } catch (error) {
-        console.error("Fehler beim Senden der Signaling-Daten:", error);
+        console.error("Signaling-Daten konnten nicht gesendet werden:", error);
         throw error;
       }
     }
 
-    // Event Listener
+    // Event-Listener
     startButton.addEventListener('click', startConnection);
 
-    // Cleanup-Funktion
+    // Cleanup
     window.addEventListener('beforeunload', () => {
-      if (peerConnection) {
-        peerConnection.close();
-      }
+      if (peerConnection) peerConnection.close();
     });
   </script>
 </body>
