@@ -64,7 +64,7 @@
       const configuration = {
         iceServers: iceServers || [
           { urls: "stun:stun.l.google.com:19302" },
-          { urls: "turn:your-turn-server.com", username: "turn-user", credential: "turn-pass" }
+          { urls: "turn:your-turn-server.com", username: "turn-username", credential: "turn-password" }
         ]
       };
 
@@ -73,7 +73,6 @@
       // ICE-Kandidaten senden
       peerConnection.onicecandidate = async (event) => {
         if (event.candidate) {
-          console.log("ICE-Kandidat:", event.candidate);
           try {
             await sendSignalingData(parseSessionId, {
               type: "candidate",
@@ -90,6 +89,16 @@
         console.log("Verbindungsstatus:", peerConnection.connectionState);
         if (peerConnection.connectionState === "connected") {
           onAirElement.style.display = "block";
+          // Keep-Alive für Data-Channel
+          setInterval(() => {
+            if (peerConnection && peerConnection.dataChannels) {
+              peerConnection.dataChannels.forEach(dc => {
+                if (dc.readyState === "open") {
+                  dc.send(JSON.stringify({ type: "keep-alive" }));
+                }
+              });
+            }
+          }, 30000); // Jede 30 Sekunden
         }
       };
 
@@ -106,7 +115,11 @@
         dc.send(JSON.stringify({ type: "start" }));
       };
       dc.onmessage = (e) => {
-        console.log("OpenAI Event:", JSON.parse(e.data));
+        const event = JSON.parse(e.data);
+        console.log("OpenAI Event:", event);
+        if (event.type === "error") {
+          console.error("OpenAI Session-Error:", event.error);
+        }
       };
 
       return peerConnection;
@@ -133,6 +146,7 @@
         // Hole Mikrofon-Stream
         userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         userAudioEl.srcObject = userStream;
+        userStream.getAudioTracks().forEach(track => peerConnection?.addTrack(track, userStream));
 
         // Initialisiere WebRTC
         peerConnection = await initializeWebRTC(
@@ -141,15 +155,18 @@
           response.sessionId
         );
 
-        // Teile Audio-Track
-        userStream.getAudioTracks().forEach(track => {
-          if (peerConnection) {
-            peerConnection.addTrack(track, userStream);
+        // Signaling-Prozess
+        await handleSignaling(response.sessionId, response.clientSecret);
+
+        // Warte auf ICE-Kandidaten von Parse
+        const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId: response.sessionId });
+        signalingData.forEach(data => {
+          if (data.type === "candidate") {
+            const candidate = new RTCIceCandidate(data.candidate);
+            peerConnection.addIceCandidate(candidate);
           }
         });
 
-        // Signaling-Prozess
-        await handleSignaling(response.sessionId, response.clientSecret);
       } catch (error) {
         console.error("Fehler:", error);
         alert(error.message);
@@ -196,15 +213,6 @@
         await peerConnection.setRemoteDescription({
           type: "answer",
           sdp: answerSdp
-        });
-
-        // Hole ICE-Kandidaten von Parse
-        const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId });
-        signalingData.forEach(data => {
-          if (data.type === "candidate") {
-            const candidate = new RTCIceCandidate(data.candidate);
-            peerConnection.addIceCandidate(candidate);
-          }
         });
 
       } catch (error) {
