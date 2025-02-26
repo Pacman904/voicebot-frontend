@@ -19,11 +19,11 @@
       padding: 30px; 
       border-radius: 15px; 
       box-shadow: 0 4px 30px rgba(0,0,0,0.15); 
-      width: 90%;
-      max-width: 600px;
-      height: 80%;
-      display: flex;
-      flex-direction: column;
+      width: 90%; 
+      max-width: 600px; 
+      height: 80%; 
+      display: flex; 
+      flex-direction: column; 
     }
     .mic-btn {
       background: #28a745;
@@ -38,6 +38,9 @@
       transition: background 0.3s;
       margin: auto;
       margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .mic-btn.disconnected {
       background: #28a745;
@@ -72,8 +75,11 @@
       <i class="fas fa-microphone"></i>
     </button>
   </div>
+
+  <!-- Font Awesome Script mit deinem Kit -->
+  <script src="https://kit.fontawesome.com/845924f09c.js" crossorigin="anonymous"></script>
+  
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
-  <script src="https://kit.fontawesome.com/your-fontawesome-kit.js" crossorigin="anonymous"></script>
   <script>
     Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
     Parse.serverURL = "https://parseapi.back4app.com/";
@@ -84,8 +90,7 @@
     let isSpeaking = false;
     let logsDiv = document.getElementById('consoleLogs');
 
-    // UI-Funktionen
-    function updateUI ConnectionState(state) {
+    function updateUIConnectionState(state) {
       const micBtn = document.getElementById('micButton');
       const statusLabel = document.getElementById('statusLabel');
       if (state === 'connected') {
@@ -104,7 +109,6 @@
       logsDiv.scrollTop = logsDiv.scrollHeight;
     }
 
-    // WebRTC-Initialisierung
     async function initializeWebRTC(iceServers, clientSecret, parseSessionId) {
       const configuration = {
         iceServers: iceServers || [
@@ -151,7 +155,6 @@
       return peerConnection;
     }
 
-    // Verbindungshandling
     async function startConnection() {
       try {
         const response = await Parse.Cloud.run("createEphemeralSession", {
@@ -160,23 +163,21 @@
         });
 
         userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        document.getElementById('userAudio').srcObject = userStream;
-        
+        userStream.getAudioTracks().forEach(track => {
+          track.applyConstraints({ echoCancellation: true });
+          peerConnection.addTrack(track);
+        });
+
         peerConnection = await initializeWebRTC(
           response.iceServers, 
           response.clientSecret, 
           response.sessionId
         );
 
-        userStream.getAudioTracks().forEach(track => {
-          peerConnection.addTrack(track);
-          track.applyConstraints({ echoCancellation: true });
-        });
-
         const offer = await peerConnection.createOffer({ offerToReceiveAudio: true });
         await peerConnection.setLocalDescription(offer);
-
         logMessage("SDP-Angebot gesendet");
+
         await Parse.Cloud.run("sendSignalingData", {
           sessionId: response.sessionId,
           data: { type: "offer", sdp: offer.sdp }
@@ -217,13 +218,11 @@
       }
     }
 
-    // Event-Handling
     peerConnection?.addEventListener('connectionstatechange', () => {
       updateUIConnectionState(peerConnection?.connectionState);
       logMessage(`Verbindungsstatus: ${peerConnection?.connectionState}`);
     });
 
-    // Audio-Verarbeitung
     function startAudioProcessing() {
       const audioContext = new AudioContext();
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
@@ -236,6 +235,7 @@
       processor.onaudioprocess = (event) => {
         const buffer = event.inputBuffer.getChannelData(0);
         const volume = Math.sqrt(buffer.reduce((sum, sample) => sum + sample ** 2, 0) / buffer.length);
+        
         if (volume > 0.1) {
           isSpeaking = true;
           dc.send(JSON.stringify({ type: "input_audio_buffer.append", audio: Array.from(buffer) }));
@@ -253,7 +253,6 @@
       };
     }
 
-    // UI-Interaktion
     async function toggleConnection() {
       if (peerConnection?.connectionState === 'connected') {
         await stopConnection();
@@ -274,7 +273,6 @@
       logMessage("Verbindung beendet");
     }
 
-    // Signaling-Funktionen
     async function sendSignalingData(sessionId, data) {
       try {
         await Parse.Cloud.run("sendSignalingData", {
@@ -286,7 +284,6 @@
       }
     }
 
-    // Cleanup
     window.addEventListener('beforeunload', stopConnection);
   </script>
 </body>
