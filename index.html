@@ -64,9 +64,11 @@
       const configuration = {
         iceServers: iceServers || [
           { urls: "stun:stun.l.google.com:19302" },
- urls: "turn:numb.viagenie.ca",
-        username: "", 
-        credential: ""
+          { 
+            urls: "turn:numb.viagenie.ca",
+            username: "", //珊瑚修正：Leerer Username
+            credential: "" //珊瑚修正：Leeres Credential
+          }
         ]
       };
 
@@ -91,16 +93,6 @@
         console.log("Verbindungsstatus:", peerConnection.connectionState);
         if (peerConnection.connectionState === "connected") {
           onAirElement.style.display = "block";
-          // Keep-Alive für Data-Channel
-          setInterval(() => {
-            if (peerConnection && peerConnection.dataChannels) {
-              peerConnection.dataChannels.forEach(dc => {
-                if (dc.readyState === "open") {
-                  dc.send(JSON.stringify({ type: "keep-alive" }));
-                }
-              });
-            }
-          }, 30000); // Jede 30 Sekunden
         }
       };
 
@@ -133,7 +125,6 @@
         console.log("Verbindungsaufbau gestartet...");
         onAirElement.style.display = "block";
 
-        // Hole Session-Daten
         const response = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
@@ -145,29 +136,17 @@
           throw new Error("Ungültige Server-Antwort");
         }
 
-        // Hole Mikrofon-Stream
         userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         userAudioEl.srcObject = userStream;
         userStream.getAudioTracks().forEach(track => peerConnection?.addTrack(track, userStream));
 
-        // Initialisiere WebRTC
         peerConnection = await initializeWebRTC(
           response.iceServers, 
           response.clientSecret, 
           response.sessionId
         );
 
-        // Signaling-Prozess
         await handleSignaling(response.sessionId, response.clientSecret);
-
-        // Hole ICE-Kandidaten von Parse
-        const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId: response.sessionId });
-        signalingData.forEach(data => {
-          if (data.type === "candidate") {
-            const candidate = new RTCIceCandidate(data.candidate);
-            peerConnection.addIceCandidate(candidate);
-          }
-        });
 
       } catch (error) {
         console.error("Fehler:", error);
@@ -182,20 +161,17 @@
       if (!peerConnection) throw new Error("WebRTC nicht initialisiert");
 
       try {
-        // Erstelle SDP-Angebot
         const offer = await peerConnection.createOffer({
           offerToReceiveAudio: true,
           offerToReceiveVideo: false
         });
         await peerConnection.setLocalDescription(offer);
 
-        // Sende SDP-Angebot an Backend
         await Parse.Cloud.run("sendSignalingData", {
           sessionId: sessionId,
           data: { type: "offer", sdp: offer.sdp }
         });
 
-        // Sende SDP-Angebot an OpenAI
         const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
           method: "POST",
           body: offer.sdp,
@@ -210,11 +186,18 @@
           throw new Error(`OpenAI-Fehler: ${errorData.error?.message || "Unbekannter Fehler"}`);
         }
 
-        // Setze SDP-Antwort
         const answerSdp = await sdpResponse.text();
         await peerConnection.setRemoteDescription({
           type: "answer",
           sdp: answerSdp
+        });
+
+        const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId });
+        signalingData.forEach(data => {
+          if (data.type === "candidate") {
+            const candidate = new RTCIceCandidate(data.candidate);
+            peerConnection.addIceCandidate(candidate);
+          }
         });
 
       } catch (error) {
