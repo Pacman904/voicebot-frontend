@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenAI VoiceBot</title>
   <style>
     body { 
@@ -54,12 +53,7 @@
 
     let peerConnection = null;
     let userStream = null;
-    const startButton = document.getElementById('startButton');
-    const onAirElement = document.getElementById('onAir');
-    const openAIAudioEl = document.getElementById('openAIAudio');
-    const userAudioEl = document.getElementById('userAudio');
 
-    // Initialisiere WebRTC
     async function initializeWebRTC(iceServers, clientSecret, parseSessionId) {
       const configuration = {
         iceServers: iceServers || [
@@ -74,13 +68,14 @@
 
       peerConnection = new RTCPeerConnection(configuration);
 
-      // ICE-Kandidaten senden
       peerConnection.onicecandidate = async (event) => {
         if (event.candidate) {
           try {
             await sendSignalingData(parseSessionId, {
               type: "candidate",
-              candidate: event.candidate //珊瑚修正：Sende komplettes RTCIceCandidate-Objekt
+              candidate: event.candidate.candidate,
+              sdpMid: event.candidate.sdpMid,
+              sdpMLineIndex: event.candidate.sdpMLineIndex
             });
           } catch (error) {
             console.error("Signaling-Fehler:", error);
@@ -88,21 +83,18 @@
         }
       };
 
-      // Verbindungszustand überwachen
       peerConnection.onconnectionstatechange = () => {
         console.log("Verbindungsstatus:", peerConnection.connectionState);
         if (peerConnection.connectionState === "connected") {
-          onAirElement.style.display = "block";
+          document.getElementById('onAir').style.display = "block";
         }
       };
 
-      // Empfange OpenAI-Audio
       peerConnection.ontrack = (event) => {
         console.log("OpenAI Audio-Track empfangen:", event.track);
-        openAIAudioEl.srcObject = event.streams[0];
+        document.getElementById('openAIAudio').srcObject = event.streams[0];
       };
 
-      // Data-Channel für Echtzeit-Kommunikation
       const dc = peerConnection.createDataChannel("oaiControlEvents");
       dc.onopen = () => {
         console.log("Data-Channel verbunden");
@@ -119,26 +111,23 @@
       return peerConnection;
     }
 
-    // Starte Verbindung
     async function startConnection() {
       try {
         console.log("Verbindungsaufbau gestartet...");
-        onAirElement.style.display = "block";
+        document.getElementById('onAir').style.display = "block";
 
         const response = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
         });
 
-        console.log("Server Response:", response);
-
         if (!response.sessionId || !response.clientSecret || !response.iceServers) {
           throw new Error("Ungültige Server-Antwort");
         }
 
         userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        userAudioEl.srcObject = userStream;
-        userStream.getAudioTracks().forEach(track => peerConnection?.addTrack(track, userStream));
+        document.getElementById('userAudio').srcObject = userStream;
+        userStream.getAudioTracks().forEach(track => track.enabled = true);
 
         peerConnection = await initializeWebRTC(
           response.iceServers, 
@@ -146,17 +135,18 @@
           response.sessionId
         );
 
+        userStream.getAudioTracks().forEach(track => peerConnection.addTrack(track));
+
         await handleSignaling(response.sessionId, response.clientSecret);
 
       } catch (error) {
         console.error("Fehler:", error);
         alert(error.message);
       } finally {
-        onAirElement.style.display = "none";
+        document.getElementById('onAir').style.display = "none";
       }
     }
 
-    // Signaling-Funktion
     async function handleSignaling(sessionId, clientSecret) {
       if (!peerConnection) throw new Error("WebRTC nicht initialisiert");
 
@@ -192,14 +182,13 @@
           sdp: answerSdp
         });
 
-        //珊瑚修正：Richte ICE-Kandidaten korrekt ein
         const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId });
         signalingData.forEach(data => {
           if (data.type === "candidate") {
             const candidate = new RTCIceCandidate({
-              candidate: data.candidate.candidate,
-              sdpMid: data.candidate.sdpMid,
-              sdpMLineIndex: data.candidate.sdpMLineIndex
+              candidate: data.candidate,
+              sdpMid: data.sdpMid,
+              sdpMLineIndex: data.sdpMLineIndex
             });
             peerConnection.addIceCandidate(candidate);
           }
@@ -211,12 +200,11 @@
       }
     }
 
-    // Sendet Signaling-Daten
     async function sendSignalingData(sessionId, data) {
       try {
         await Parse.Cloud.run("sendSignalingData", {
           sessionId: sessionId,
-          data: data //珊瑚修正：Ensure data enthält komplette RTCIceCandidate-Objekte
+          data: data // Sendet komplettes Candidate-Objekt (candidate, sdpMid, sdpMLineIndex)
         });
       } catch (error) {
         console.error("Signaling-Fehler:", error);
@@ -224,10 +212,8 @@
       }
     }
 
-    // Event-Listener
-    startButton.addEventListener('click', startConnection);
+    document.getElementById('startButton').addEventListener('click', startConnection);
 
-    // Cleanup
     window.addEventListener('beforeunload', () => {
       if (peerConnection) peerConnection.close();
       if (userStream) userStream.getTracks().forEach(track => track.stop());
