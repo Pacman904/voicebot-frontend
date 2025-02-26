@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebRTC mit OpenAI</title>
+  <title>OpenAI VoiceBot</title>
   <style>
     body { 
       font-family: Arial; 
@@ -59,26 +59,28 @@
     const openAIAudioEl = document.getElementById('openAIAudio');
     const userAudioEl = document.getElementById('userAudio');
 
+    // Initialisiere WebRTC
     async function initializeWebRTC(iceServers, clientSecret, parseSessionId) {
       const configuration = {
         iceServers: iceServers || [
           { urls: "stun:stun.l.google.com:19302" },
           { 
             urls: "turn:numb.viagenie.ca",
-            username: "webrtc@live.com", //珊瑚修正：Gültiger Username
-            credential: "muazkh" //珊瑚修正：Gültiges Credential
+            username: "webrtc@live.com",
+            credential: "muazkh"
           }
         ]
       };
 
       peerConnection = new RTCPeerConnection(configuration);
 
+      // ICE-Kandidaten senden
       peerConnection.onicecandidate = async (event) => {
         if (event.candidate) {
           try {
             await sendSignalingData(parseSessionId, {
               type: "candidate",
-              candidate: event.candidate.candidate
+              candidate: event.candidate //珊瑚修正：Sende komplettes RTCIceCandidate-Objekt
             });
           } catch (error) {
             console.error("Signaling-Fehler:", error);
@@ -86,6 +88,7 @@
         }
       };
 
+      // Verbindungszustand überwachen
       peerConnection.onconnectionstatechange = () => {
         console.log("Verbindungsstatus:", peerConnection.connectionState);
         if (peerConnection.connectionState === "connected") {
@@ -93,11 +96,13 @@
         }
       };
 
+      // Empfange OpenAI-Audio
       peerConnection.ontrack = (event) => {
         console.log("OpenAI Audio-Track empfangen:", event.track);
         openAIAudioEl.srcObject = event.streams[0];
       };
 
+      // Data-Channel für Echtzeit-Kommunikation
       const dc = peerConnection.createDataChannel("oaiControlEvents");
       dc.onopen = () => {
         console.log("Data-Channel verbunden");
@@ -114,6 +119,7 @@
       return peerConnection;
     }
 
+    // Starte Verbindung
     async function startConnection() {
       try {
         console.log("Verbindungsaufbau gestartet...");
@@ -150,6 +156,7 @@
       }
     }
 
+    // Signaling-Funktion
     async function handleSignaling(sessionId, clientSecret) {
       if (!peerConnection) throw new Error("WebRTC nicht initialisiert");
 
@@ -185,10 +192,15 @@
           sdp: answerSdp
         });
 
+        //珊瑚修正：Richte ICE-Kandidaten korrekt ein
         const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId });
         signalingData.forEach(data => {
           if (data.type === "candidate") {
-            const candidate = new RTCIceCandidate(data.candidate);
+            const candidate = new RTCIceCandidate({
+              candidate: data.candidate.candidate,
+              sdpMid: data.candidate.sdpMid,
+              sdpMLineIndex: data.candidate.sdpMLineIndex
+            });
             peerConnection.addIceCandidate(candidate);
           }
         });
@@ -199,11 +211,12 @@
       }
     }
 
+    // Sendet Signaling-Daten
     async function sendSignalingData(sessionId, data) {
       try {
         await Parse.Cloud.run("sendSignalingData", {
           sessionId: sessionId,
-          data: data
+          data: data //珊瑚修正：Ensure data enthält komplette RTCIceCandidate-Objekte
         });
       } catch (error) {
         console.error("Signaling-Fehler:", error);
@@ -211,8 +224,10 @@
       }
     }
 
+    // Event-Listener
     startButton.addEventListener('click', startConnection);
 
+    // Cleanup
     window.addEventListener('beforeunload', () => {
       if (peerConnection) peerConnection.close();
       if (userStream) userStream.getTracks().forEach(track => track.stop());
