@@ -59,22 +59,20 @@
     const openAIAudioEl = document.getElementById('openAIAudio');
     const userAudioEl = document.getElementById('userAudio');
 
-    // Initialisiere WebRTC
     async function initializeWebRTC(iceServers, clientSecret, parseSessionId) {
       const configuration = {
         iceServers: iceServers || [
           { urls: "stun:stun.l.google.com:19302" },
           { 
             urls: "turn:numb.viagenie.ca",
-            username: "", //珊瑚修正：Leerer Username
-            credential: "" //珊瑚修正：Leeres Credential
+            username: "webrtc@live.com", //珊瑚修正：Gültiger Username
+            credential: "muazkh" //珊瑚修正：Gültiges Credential
           }
         ]
       };
 
       peerConnection = new RTCPeerConnection(configuration);
 
-      // ICE-Kandidaten senden
       peerConnection.onicecandidate = async (event) => {
         if (event.candidate) {
           try {
@@ -88,7 +86,6 @@
         }
       };
 
-      // Verbindungszustand überwachen
       peerConnection.onconnectionstatechange = () => {
         console.log("Verbindungsstatus:", peerConnection.connectionState);
         if (peerConnection.connectionState === "connected") {
@@ -96,13 +93,11 @@
         }
       };
 
-      // Empfange OpenAI-Audio
       peerConnection.ontrack = (event) => {
         console.log("OpenAI Audio-Track empfangen:", event.track);
         openAIAudioEl.srcObject = event.streams[0];
       };
 
-      // Data-Channel für Echtzeit-Kommunikation
       const dc = peerConnection.createDataChannel("oaiControlEvents");
       dc.onopen = () => {
         console.log("Data-Channel verbunden");
@@ -119,7 +114,6 @@
       return peerConnection;
     }
 
-    // Starte Verbindung
     async function startConnection() {
       try {
         console.log("Verbindungsaufbau gestartet...");
@@ -156,7 +150,6 @@
       }
     }
 
-    // Signaling-Funktion
     async function handleSignaling(sessionId, clientSecret) {
       if (!peerConnection) throw new Error("WebRTC nicht initialisiert");
 
@@ -206,7 +199,6 @@
       }
     }
 
-    // Sendet Signaling-Daten
     async function sendSignalingData(sessionId, data) {
       try {
         await Parse.Cloud.run("sendSignalingData", {
@@ -219,10 +211,8 @@
       }
     }
 
-    // Event-Listener
     startButton.addEventListener('click', startConnection);
 
-    // Cleanup
     window.addEventListener('beforeunload', () => {
       if (peerConnection) peerConnection.close();
       if (userStream) userStream.getTracks().forEach(track => track.stop());
