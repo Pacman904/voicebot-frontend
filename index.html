@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenAI VoiceBot</title>
   <style>
     body { 
@@ -54,10 +53,10 @@
 
     let peerConnection = null;
     let userStream = null;
-    let audioContext = null;
-    let processorNode = null;
+    let dc = null;
+    let audioBuffer = [];
+    let isSpeaking = false;
 
-    // Initialisiere WebRTC mit korrekten ICE-Servers
     async function initializeWebRTC(iceServers, clientSecret, parseSessionId) {
       const configuration = {
         iceServers: iceServers || [
@@ -65,42 +64,41 @@
           { 
             urls: "turn:numb.viagenie.ca",
             username: "webrtc@live.com",
-            credential: "muazkh"
+            credential: "muazkh" 
           }
         ]
       };
 
       peerConnection = new RTCPeerConnection(configuration);
 
-      // ICE-Kandidaten-Verarbeitung
+      // ICE-Kandidaten senden
       peerConnection.onicecandidate = async (event) => {
         if (event.candidate) {
-          try {
-            await sendSignalingData(parseSessionId, {
-              type: "candidate",
-              candidate: event.candidate.candidate,
-              sdpMid: event.candidate.sdpMid,
-              sdpMLineIndex: event.candidate.sdpMLineIndex
-            });
-          } catch (error) {
-            console.error("Signaling-Fehler:", error);
-          }
+          await sendSignalingData(parseSessionId, {
+            type: "candidate",
+            candidate: event.candidate.candidate,
+            sdpMid: event.candidate.sdpMid,
+            sdpMLineIndex: event.candidate.sdpMLineIndex
+          });
         }
       };
 
-      // Audio-Track-Handling
+      // OpenAI-Audio empfangen
       peerConnection.ontrack = (event) => {
         const audioEl = document.getElementById('openAIAudio');
         audioEl.srcObject = event.streams[0];
       };
 
-      // Data-Channel für OpenAI-Kontroll-Ereignisse
-      const dc = peerConnection.createDataChannel("oaiControlEvents");
+      // Data-Channel für Kontroll-Ereignisse
+      dc = peerConnection.createDataChannel("oaiControlEvents");
       dc.onopen = () => {
         console.log("Data-Channel verbunden");
+        //珊瑚修正：Starte Audio-Verarbeitung
+        startAudioProcessing();
       };
       dc.onmessage = (e) => {
         const event = JSON.parse(e.data);
+        console.log("OpenAI Event:", event);
         if (event.type === "error") {
           console.error("OpenAI Session-Fehler:", event.error);
         }
@@ -109,96 +107,127 @@
       return peerConnection;
     }
 
-    // Verbindungsaufbau-Funktion
     async function startConnection() {
       try {
-        console.log("Verbindungsaufbau gestartet...");
-        document.getElementById('onAir').style.display = "block";
-
-        // Hole Session-Daten vom Backend
         const response = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
         });
 
-        // Mikrofon-Zugriff
         userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         document.getElementById('userAudio').srcObject = userStream;
         
-        // Initialisiere PeerConnection
         peerConnection = await initializeWebRTC(
           response.iceServers, 
           response.clientSecret, 
           response.sessionId
         );
 
-        // Teile Audio-Track
-        userStream.getAudioTracks().forEach(track => {
-          peerConnection.addTrack(track);
-        });
+        //珊瑚修正：Teile Audio-Track
+        userStream.getAudioTracks().forEach(track => peerConnection.addTrack(track));
 
-        // Erstelle SDP-Angebot
-        const offer = await peerConnection.createOffer({
-          offerToReceiveAudio: true,
-          offerToReceiveVideo: false
-        });
-        await peerConnection.setLocalDescription(offer);
-
-        // Sende SDP-Angebot an OpenAI
-        const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
-          method: "POST",
-          body: offer.sdp,
-          headers: {
-            Authorization: `Bearer ${response.clientSecret}`,
-            "Content-Type": "application/sdp"
-          }
-        });
-
-        if (!sdpResponse.ok) {
-          const errorData = await sdpResponse.json();
-          throw new Error(`OpenAI-Fehler: ${errorData.error?.message}`);
-        }
-
-        // Setze SDP-Antwort
-        const answerSdp = await sdpResponse.text();
-        await peerConnection.setRemoteDescription({
-          type: "answer",
-          sdp: answerSdp
-        });
-
-        // Hole ICE-Kandidaten aus der Datenbank
-        const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId: response.sessionId });
-        signalingData.forEach(data => {
-          if (data.type === "candidate") {
-            const candidate = new RTCIceCandidate({
-              candidate: data.candidate,
-              sdpMid: data.sdpMid,
-              sdpMLineIndex: data.sdpMLineIndex
-            });
-            peerConnection.addIceCandidate(candidate);
-          }
-        });
-
+        await handleSignaling(response.sessionId, response.clientSecret);
       } catch (error) {
-        console.error("Fehler:", error);
         alert(error.message);
-      } finally {
-        document.getElementById('onAir').style.display = "none";
       }
     }
 
-    // Sendet Signaling-Daten in die Datenbank
-    async function sendSignalingData(sessionId, data) {
+    async function handleSignaling(sessionId, clientSecret) {
+      const offer = await peerConnection.createOffer({ offerToReceiveAudio: true });
+      await peerConnection.setLocalDescription(offer);
+
       await Parse.Cloud.run("sendSignalingData", {
         sessionId: sessionId,
-        data: data // Muss ein JSON-Objekt mit { type, candidate, sdpMid, sdpMLineIndex } sein
+        data: { type: "offer", sdp: offer.sdp }
+      });
+
+      const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
+        method: "POST",
+        body: offer.sdp,
+        headers: {
+          Authorization: `Bearer ${clientSecret}`,
+          "Content-Type": "application/sdp"
+        }
+      });
+
+      if (!sdpResponse.ok) {
+        const errorData = await sdpResponse.json();
+        throw new Error(`OpenAI-Fehler: ${errorData.error?.message}`);
+      }
+
+      const answerSdp = await sdpResponse.text();
+      await peerConnection.setRemoteDescription({ type: "answer", sdp: answerSdp });
+
+      const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId });
+      signalingData.forEach(data => {
+        if (data.type === "candidate") {
+          const candidate = new RTCIceCandidate({
+            candidate: data.candidate,
+            sdpMid: data.sdpMid,
+            sdpMLineIndex: data.sdpMLineIndex
+          });
+          peerConnection.addIceCandidate(candidate);
+        }
       });
     }
 
-    // Event-Listener
+    function startAudioProcessing() {
+      const audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(userStream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      processor.onaudioprocess = (event) => {
+        const buffer = event.inputBuffer.getChannelData(0);
+        const volume = Math.sqrt(buffer.reduce((sum, sample) => sum + sample ** 2, 0) / buffer.length);
+
+        if (volume > 0.1) {
+          isSpeaking = true;
+          audioBuffer.push(buffer);
+        } else {
+          if (isSpeaking) {
+            setTimeout(() => {
+              if (!isSpeaking) {
+                sendAudioBuffer();
+              }
+            }, 1000); //珊瑚修正：Warte 1 Sekunde bis zum Commit
+          }
+        }
+      };
+
+      processor.onaudioprocess = (event) => {
+        const buffer = event.inputBuffer.getChannelData(0);
+        audioBuffer.push(buffer);
+        if (isSpeaking) {
+          dc.send(JSON.stringify({ type: "input_audio_buffer.append", audio: audioBuffer }));
+          audioBuffer = [];
+        }
+      };
+
+      userStream.getAudioTracks()[0].onended = () => {
+        if (isSpeaking) {
+          sendAudioBuffer();
+        }
+      };
+    }
+
+    function sendAudioBuffer() {
+      dc.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+      isSpeaking = false;
+      audioBuffer = [];
+    }
+
+    async function sendSignalingData(sessionId, data) {
+      await Parse.Cloud.run("sendSignalingData", {
+        sessionId: sessionId,
+        data: data
+      });
+    }
+
     document.getElementById('startButton').addEventListener('click', startConnection);
 
-    // Cleanup
     window.addEventListener('beforeunload', () => {
       if (peerConnection) peerConnection.close();
       if (userStream) userStream.getTracks().forEach(track => track.stop());
