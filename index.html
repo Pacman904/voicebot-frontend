@@ -61,14 +61,13 @@
           { 
             urls: "turn:numb.viagenie.ca",
             username: "webrtc@live.com",
-            credential: "muazkh"
+            credential: "muazkh" 
           }
         ]
       };
 
       peerConnection = new RTCPeerConnection(configuration);
 
-      // ICE-Kandidaten senden
       peerConnection.onicecandidate = async (event) => {
         if (event.candidate) {
           try {
@@ -84,7 +83,6 @@
         }
       };
 
-      // Verbindungszustand überwachen
       peerConnection.onconnectionstatechange = () => {
         console.log("Verbindungsstatus:", peerConnection.connectionState);
         if (peerConnection.connectionState === "connected") {
@@ -92,18 +90,14 @@
         }
       };
 
-      // OpenAI-Audio empfangen
       peerConnection.ontrack = (event) => {
-        console.log("OpenAI Audio-Track empfangen:", event.track);
         document.getElementById('openAIAudio').srcObject = event.streams[0];
       };
 
-      // Data-Channel für Echtzeit-Kommunikation
       const dc = peerConnection.createDataChannel("oaiControlEvents");
       dc.onopen = () => {
         console.log("Data-Channel verbunden");
-        dc.send(JSON.stringify({ type: "start" }));
-        // Keep-Alive-Pings alle 30 Sekunden
+        // Keep-Alive-Pings für稳定的连接
         setInterval(() => {
           if (dc.readyState === "open") {
             dc.send(JSON.stringify({ type: "keep-alive" }));
@@ -126,7 +120,6 @@
         console.log("Verbindungsaufbau gestartet...");
         document.getElementById('onAir').style.display = "block";
 
-        // Hole Session-Daten vom Backend
         const response = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
@@ -136,24 +129,17 @@
           throw new Error("Ungültige Server-Antwort");
         }
 
-        // Mikrofon-Zugriff
         userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         document.getElementById('userAudio').srcObject = userStream;
-        userStream.getAudioTracks().forEach(track => track.enabled = true);
-
-        // Initialisiere WebRTC
+        
         peerConnection = await initializeWebRTC(
           response.iceServers, 
           response.clientSecret, 
           response.sessionId
         );
 
-        // Teile Audio-Track
-        userStream.getAudioTracks().forEach(track => {
-          peerConnection.addTrack(track, userStream);
-        });
+        userStream.getAudioTracks().forEach(track => peerConnection.addTrack(track));
 
-        // Signaling-Prozess
         await handleSignaling(response.sessionId, response.clientSecret);
       } catch (error) {
         console.error("Fehler:", error);
@@ -167,20 +153,17 @@
       if (!peerConnection) throw new Error("WebRTC nicht initialisiert");
 
       try {
-        // Erstelle SDP-Angebot
         const offer = await peerConnection.createOffer({
           offerToReceiveAudio: true,
           offerToReceiveVideo: false
         });
         await peerConnection.setLocalDescription(offer);
 
-        // Sende SDP-Angebot an Backend
         await Parse.Cloud.run("sendSignalingData", {
           sessionId: sessionId,
           data: { type: "offer", sdp: offer.sdp }
         });
 
-        // Sende SDP-Angebot an OpenAI
         const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
           method: "POST",
           body: offer.sdp,
@@ -195,14 +178,12 @@
           throw new Error(`OpenAI-Fehler: ${errorData.error?.message || "Unbekannter Fehler"}`);
         }
 
-        // Setze SDP-Antwort
         const answerSdp = await sdpResponse.text();
         await peerConnection.setRemoteDescription({
           type: "answer",
           sdp: answerSdp
         });
 
-        // Hole ICE-Kandidaten von Parse
         const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId });
         signalingData.forEach(data => {
           if (data.type === "candidate") {
@@ -233,10 +214,8 @@
       }
     }
 
-    // Event-Listener
     document.getElementById('startButton').addEventListener('click', startConnection);
 
-    // Cleanup
     window.addEventListener('beforeunload', () => {
       if (peerConnection) peerConnection.close();
       if (userStream) userStream.getTracks().forEach(track => track.stop());
