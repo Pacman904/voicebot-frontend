@@ -141,6 +141,7 @@
         audioEl.style.width = '100%';
         audioEl.autoplay = true;
         document.body.appendChild(audioEl);
+        logMessage("OpenAI Audio-Track empfangen");
       };
 
       dc = peerConnection.createDataChannel("oaiControlEvents");
@@ -209,6 +210,7 @@
               sdpMLineIndex: data.sdpMLineIndex
             });
             peerConnection.addIceCandidate(candidate);
+            logMessage("ICE-Kandidat empfangen");
           }
         });
 
@@ -227,7 +229,7 @@
       const audioContext = new AudioContext();
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       userStream.getAudioTracks().forEach(track => {
-        const source = audioContext.createMediaStreamTrackSource(track);
+        const source = audioContext.createMediaStreamSource(track);
         source.connect(processor);
       });
       processor.connect(audioContext.destination);
@@ -271,6 +273,7 @@
         userStream = null;
       }
       logMessage("Verbindung beendet");
+      updateUIConnectionState('disconnected');
     }
 
     async function sendSignalingData(sessionId, data) {
