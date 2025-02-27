@@ -2,28 +2,27 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenAI VoiceBot</title>
   <style>
-    body { 
-      font-family: Arial; 
-      display: flex; 
-      justify-content: center; 
-      align-items: center; 
-      height: 100vh; 
-      background: #f4f4f4; 
+    body {
+      font-family: Arial;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
       margin: 0;
+      background: #f8f9fa;
     }
-    .container { 
-      background: white; 
-      padding: 30px; 
-      border-radius: 15px; 
-      box-shadow: 0 4px 30px rgba(0,0,0,0.15); 
-      width: 90%; 
-      max-width: 600px; 
-      height: 80%; 
-      display: flex; 
-      flex-direction: column; 
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 4px 30px rgba(0,0,0,0.15);
+      width: 90%;
+      max-width: 600px;
+      height: 80%;
+      display: flex;
+      flex-direction: column;
     }
     .mic-btn {
       background: #28a745;
@@ -41,12 +40,6 @@
       display: flex;
       align-items: center;
       justify-content: center;
-    }
-    .mic-btn.disconnected {
-      background: #28a745;
-    }
-    .mic-btn.connected {
-      background: #dc3545;
     }
     #statusLabel {
       text-align: center;
@@ -71,16 +64,18 @@
   <div class="container">
     <div id="statusLabel">on Air</div>
     <div id="consoleLogs"></div>
-    <button id="micButton" class="mic-btn disconnected" onclick="toggleConnection()">
+    <button id="micButton" class="mic-btn" onclick="toggleConnection()">
       <i class="fas fa-microphone"></i>
     </button>
   </div>
 
-  <!-- Font Awesome Script mit deinem Kit -->
+  <!-- Font Awesome für Icons -->
   <script src="https://kit.fontawesome.com/845924f09c.js" crossorigin="anonymous"></script>
   
+  <!-- Parse.js für Backend-Communication -->
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
+    // Parse-Initialisierung
     Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
     Parse.serverURL = "https://parseapi.back4app.com/";
 
@@ -88,27 +83,27 @@
     let userStream = null;
     let dc = null;
     let isSpeaking = false;
-    let logsDiv = document.getElementById('consoleLogs');
 
-    function updateUIConnectionState(state) {
-      const micBtn = document.getElementById('micButton');
-      const statusLabel = document.getElementById('statusLabel');
-      if (state === 'connected') {
-        micBtn.classList.remove('disconnected');
-        micBtn.classList.add('connected');
-        statusLabel.style.display = 'block';
-      } else {
-        micBtn.classList.remove('connected');
-        micBtn.classList.add('disconnected');
-        statusLabel.style.display = 'none';
-      }
-    }
-
+    // UI-Funktionen
     function logMessage(message) {
+      const logsDiv = document.getElementById('consoleLogs');
       logsDiv.textContent += `[${new Date().toISOString()}] ${message}\n`;
       logsDiv.scrollTop = logsDiv.scrollHeight;
     }
 
+    function updateUI ConnectionState(state) {
+      const micBtn = document.getElementById('micButton');
+      const statusLabel = document.getElementById('statusLabel');
+      if (state === 'connected') {
+        micBtn.style.backgroundColor = '#dc3545';
+        statusLabel.style.display = 'block';
+      } else {
+        micBtn.style.backgroundColor = '#28a745';
+        statusLabel.style.display = 'none';
+      }
+    }
+
+    // WebRTC-Initialisierung
     async function initializeWebRTC(iceServers, clientSecret, parseSessionId) {
       const configuration = {
         iceServers: iceServers || [
@@ -118,6 +113,8 @@
       };
 
       peerConnection = new RTCPeerConnection(configuration);
+      
+      // ICE-Kandidaten senden
       peerConnection.onicecandidate = async (event) => {
         if (event.candidate) {
           try {
@@ -129,11 +126,12 @@
             });
             logMessage("ICE-Kandidat gesendet");
           } catch (error) {
-            logMessage("Fehler beim Senden des ICE-Kandidaten");
+            logMessage("Fehler beim Senden des ICE-Kandidaten: " + error.message);
           }
         }
       };
 
+      // OpenAI-Audio empfangen
       peerConnection.ontrack = (event) => {
         const audioEl = document.createElement('audio');
         audioEl.srcObject = event.streams[0];
@@ -144,46 +142,56 @@
         logMessage("OpenAI Audio-Track empfangen");
       };
 
+      // Data-Channel für Kontroll-Ereignisse
       dc = peerConnection.createDataChannel("oaiControlEvents");
+      dc.onopen = () => {
+        logMessage("Data-Channel verbunden");
+        startAudioProcessing();
+      };
       dc.onmessage = (e) => {
         const event = JSON.parse(e.data);
         logMessage(`OpenAI Event: ${JSON.stringify(event)}`);
-        if (event.type === "error") {
-          logMessage("OpenAI-Fehler: " + event.error.message, "error");
-        }
       };
 
       return peerConnection;
     }
 
+    // Verbindungshandling
     async function startConnection() {
       try {
+        // Session vom Backend holen
         const response = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
         });
+        logMessage("Server-Response: " + JSON.stringify(response));
 
+        // Mikrofon-Zugriff
         userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         userStream.getAudioTracks().forEach(track => {
           track.applyConstraints({ echoCancellation: true });
-          peerConnection.addTrack(track);
         });
 
+        // PeerConnection initialisieren
         peerConnection = await initializeWebRTC(
           response.iceServers, 
           response.clientSecret, 
           response.sessionId
         );
 
+        // Audio-Tracks hinzufügen
+        userStream.getAudioTracks().forEach(track => {
+          if (peerConnection) {
+            peerConnection.addTrack(track);
+          }
+        });
+
+        // SDP-Handshake
         const offer = await peerConnection.createOffer({ offerToReceiveAudio: true });
         await peerConnection.setLocalDescription(offer);
         logMessage("SDP-Angebot gesendet");
 
-        await Parse.Cloud.run("sendSignalingData", {
-          sessionId: response.sessionId,
-          data: { type: "offer", sdp: offer.sdp }
-        });
-
+        // SDP an OpenAI senden
         const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
           method: "POST",
           body: offer.sdp,
@@ -201,35 +209,28 @@
         await peerConnection.setRemoteDescription({ type: "answer", sdp: answerSdp });
         logMessage("SDP-Antwort empfangen");
 
+        // ICE-Kandidaten aus der Datenbank holen
         const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId: response.sessionId });
         signalingData.forEach(data => {
           if (data.type === "candidate") {
-            const candidate = new RTCIceCandidate({
-              candidate: data.candidate,
-              sdpMid: data.sdpMid,
-              sdpMLineIndex: data.sdpMLineIndex
-            });
+            const candidate = new RTCIceCandidate(data);
             peerConnection.addIceCandidate(candidate);
-            logMessage("ICE-Kandidat empfangen");
           }
         });
 
         updateUIConnectionState(peerConnection.connectionState);
       } catch (error) {
-        logMessage(`Verbindungsfehler: ${error.message}`, "error");
+        logMessage(`Verbindungsfehler: ${error.message}`);
       }
     }
 
-    peerConnection?.addEventListener('connectionstatechange', () => {
-      updateUIConnectionState(peerConnection?.connectionState);
-      logMessage(`Verbindungsstatus: ${peerConnection?.connectionState}`);
-    });
-
+    // Audio-Verarbeitung
     function startAudioProcessing() {
       const audioContext = new AudioContext();
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      
       userStream.getAudioTracks().forEach(track => {
-        const source = audioContext.createMediaStreamSource(track);
+        const source = audioContext.createMediaStreamTrackSource(track);
         source.connect(processor);
       });
       processor.connect(audioContext.destination);
@@ -241,13 +242,13 @@
         if (volume > 0.1) {
           isSpeaking = true;
           dc.send(JSON.stringify({ type: "input_audio_buffer.append", audio: Array.from(buffer) }));
-          logMessage("Audio-Input buffer append");
+          logMessage("Audio-Input hinzugefügt");
         } else {
           if (isSpeaking) {
             setTimeout(() => {
               if (!isSpeaking) {
                 dc.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-                logMessage("Audio-Input buffer commit");
+                logMessage("Audio-Input abgeschlossen");
               }
             }, 1000);
           }
@@ -255,6 +256,7 @@
       };
     }
 
+    // Verbindung starten/stoppen
     async function toggleConnection() {
       if (peerConnection?.connectionState === 'connected') {
         await stopConnection();
@@ -273,9 +275,9 @@
         userStream = null;
       }
       logMessage("Verbindung beendet");
-      updateUIConnectionState('disconnected');
     }
 
+    // Signaling-Daten senden
     async function sendSignalingData(sessionId, data) {
       try {
         await Parse.Cloud.run("sendSignalingData", {
@@ -283,11 +285,18 @@
           data: data
         });
       } catch (error) {
-        logMessage("Signaling-Fehler: " + error.message, "error");
+        logMessage("Signaling-Fehler: " + error.message);
       }
     }
 
+    // Cleanup bei Browser-Schließen
     window.addEventListener('beforeunload', stopConnection);
+
+    // PeerConnection Status-Update
+    peerConnection?.addEventListener('connectionstatechange', () => {
+      updateUIConnectionState(peerConnection?.connectionState);
+      logMessage(`Verbindungsstatus: ${peerConnection?.connectionState}`);
+    });
   </script>
 </body>
 </html>
