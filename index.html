@@ -70,13 +70,13 @@
     <audio id="openAIAudio" style="width: 100%; margin: 15px 0;" crossorigin="anonymous"></audio>
   </div>
 
-  <!-- Font Awesome Icons -->
+  <!-- Font Awesome -->
   <script src="https://kit.fontawesome.com/845924f09c.js" crossorigin="anonymous"></script>
   
   <!-- Parse.js -->
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
+    Parse.initialize("YOUR_BACK4APP_APP_ID", "YOUR_JAVASCRIPT_KEY");
     Parse.serverURL = "https://parseapi.back4app.com/";
 
     let peerConnection = null;
@@ -85,7 +85,6 @@
     let audioContext = null;
     let isSpeaking = false;
 
-    // UI-Funktionen
     function logMessage(message) {
       const logsDiv = document.getElementById('consoleLogs');
       logsDiv.textContent += `[${new Date().toISOString()}] ${message}\n`;
@@ -104,21 +103,18 @@
       }
     }
 
-    // WebRTC-Initialisierung
     async function initializeWebRTC(iceServers, clientSecret) {
       const configuration = {
         iceServers: iceServers || [
           { urls: "stun:stun.l.google.com:19302" },
-          { urls: "turn:numb.viagenie.ca", username: "webrtc@live.com", credential: "muazkh" }
+          { urls: "turn:numb.viagenie.ca", username: "YOUR_TURN_USERNAME", credential: "YOUR_TURN_CREDENTIAL" }
         ]
       };
 
       peerConnection = new RTCPeerConnection(configuration);
       peerConnection.ontrack = (event) => {
         const audioEl = document.getElementById('openAIAudio');
-        if (audioEl) {
-          audioEl.srcObject = event.streams[0];
-        }
+        if (audioEl) audioEl.srcObject = event.streams[0];
       };
 
       dc = peerConnection.createDataChannel("oaiControlEvents");
@@ -127,50 +123,42 @@
         startAudioProcessing();
       };
       dc.onmessage = (e) => {
-        const event = JSON.parse(e.data);
-        logMessage(`OpenAI Event: ${JSON.stringify(event)}`);
-        if (event.type === "error") {
-          logMessage("OpenAI-Fehler: " + event.error.message, "error");
+        try {
+          const event = JSON.parse(e.data);
+          logMessage(`OpenAI Event: ${JSON.stringify(event)}`);
+          if (event.type === "error") {
+            logMessage("OpenAI-Fehler: " + event.error.message, "error");
+          }
+        } catch (error) {
+          logMessage("Fehler beim Parsen von OpenAI Events");
         }
       };
 
       return peerConnection;
     }
 
-    // Verbindungshandling
     async function startConnection() {
       try {
-        // Session vom Backend holen
         const response = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
         });
-        logMessage("Server-Response: " + JSON.stringify(response));
-
-        // Mikrofon-Zugriff
+        
         userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         userStream.getAudioTracks().forEach(track => {
           track.applyConstraints({ echoCancellation: true });
-          if (peerConnection) {
-            peerConnection.addTrack(track);
-          }
+          peerConnection.addTrack(track);
         });
 
-        // PeerConnection initialisieren
         peerConnection = await initializeWebRTC(response.iceServers, response.clientSecret);
-
-        // SDP-Handshake
         const offer = await peerConnection.createOffer({ offerToReceiveAudio: true });
         await peerConnection.setLocalDescription(offer);
-        logMessage("SDP-Angebot gesendet");
 
-        // Signaling-Daten speichern
         await Parse.Cloud.run("sendSignalingData", {
           sessionId: response.sessionId,
           data: { type: "offer", sdp: offer.sdp }
         });
 
-        // SDP-Response von OpenAI
         const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
           method: "POST",
           body: offer.sdp,
@@ -186,17 +174,11 @@
 
         const answerSdp = await sdpResponse.text();
         await peerConnection.setRemoteDescription({ type: "answer", sdp: answerSdp });
-        logMessage("SDP-Antwort empfangen");
 
-        // ICE-Kandidaten aus der Datenbank holen
         const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId: response.sessionId });
         signalingData.forEach(data => {
           if (data.type === "candidate") {
-            const candidate = new RTCIceCandidate({
-              candidate: data.candidate,
-              sdpMid: data.sdpMid,
-              sdpMLineIndex: data.sdpMLineIndex
-            });
+            const candidate = new RTCIceCandidate(data);
             peerConnection.addIceCandidate(candidate);
           }
         });
@@ -207,7 +189,6 @@
       }
     }
 
-    // Audio-Verarbeitung
     function startAudioProcessing() {
       audioContext = new AudioContext();
       userStream.getAudioTracks().forEach(track => {
@@ -224,7 +205,7 @@
           isSpeaking = true;
           dc.send(JSON.stringify({
             type: "input_audio_buffer.append",
-            audio: Array.from(buffer.map(sample => sample * 32767)), // PCM16-Formatierung
+            audio: Array.from(buffer.map(sample => sample * 32767)),
             timestamp: performance.now()
           }));
         } else {
@@ -232,7 +213,6 @@
             setTimeout(() => {
               if (!isSpeaking) {
                 dc.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-                logMessage("Audio-Input abgeschlossen");
               }
             }, 1000);
           }
@@ -241,7 +221,6 @@
       processor.connect(audioContext.destination);
     }
 
-    // Verbindung starten/stoppen
     async function toggleConnection() {
       if (peerConnection?.connectionState === 'connected') {
         await stopConnection();
@@ -262,29 +241,11 @@
       logMessage("Verbindung beendet");
     }
 
-    // ICE-Kandidaten senden
-    async function sendSignalingData(sessionId, data) {
-      try {
-        // Nur IPv4- und UDP-Candidates speichern
-        if (data.candidate?.includes("ipv4") && data.candidate?.includes("udp")) {
-          await Parse.Cloud.run("sendSignalingData", {
-            sessionId: sessionId,
-            data: data
-          });
-        }
-      } catch (error) {
-        logMessage("Signaling-Fehler: " + error.message);
-      }
-    }
-
-    // Event-Listener für PeerConnection-Status
+    window.addEventListener('beforeunload', stopConnection);
     peerConnection?.addEventListener('connectionstatechange', () => {
       updateUIConnectionState(peerConnection?.connectionState);
       logMessage(`Verbindungsstatus: ${peerConnection?.connectionState}`);
     });
-
-    // Cleanup bei Browser-Schließen
-    window.addEventListener('beforeunload', stopConnection);
   </script>
 </body>
 </html>
