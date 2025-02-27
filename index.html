@@ -67,13 +67,13 @@
     <button id="micButton" class="mic-btn" onclick="toggleConnection()">
       <i class="fas fa-microphone"></i>
     </button>
-    <audio id="openAIAudio" style="width: 100%; margin: 15px 0;"></audio>
+    <audio id="openAIAudio" style="width: 100%; margin: 15px 0;" crossorigin="anonymous"></audio>
   </div>
 
-  <!-- Font Awesome für Icons -->
+  <!-- Font Awesome Icons -->
   <script src="https://kit.fontawesome.com/845924f09c.js" crossorigin="anonymous"></script>
   
-  <!-- Parse.js für Backend-Communication -->
+  <!-- Parse.js -->
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
     Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
@@ -109,11 +109,7 @@
       const configuration = {
         iceServers: iceServers || [
           { urls: "stun:stun.l.google.com:19302" },
-          { 
-            urls: "turn:numb.viagenie.ca", 
-            username: "webrtc@live.com", 
-            credential: "muazkh" 
-          }
+          { urls: "turn:numb.viagenie.ca", username: "webrtc@live.com", credential: "muazkh" }
         ]
       };
 
@@ -269,10 +265,13 @@
     // ICE-Kandidaten senden
     async function sendSignalingData(sessionId, data) {
       try {
-        await Parse.Cloud.run("sendSignalingData", {
-          sessionId: sessionId,
-          data: data
-        });
+        // Nur IPv4- und UDP-Candidates speichern
+        if (data.candidate?.includes("ipv4") && data.candidate?.includes("udp")) {
+          await Parse.Cloud.run("sendSignalingData", {
+            sessionId: sessionId,
+            data: data
+          });
+        }
       } catch (error) {
         logMessage("Signaling-Fehler: " + error.message);
       }
