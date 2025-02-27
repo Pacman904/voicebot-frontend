@@ -75,7 +75,6 @@
   <!-- Parse.js für Backend-Communication -->
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
-    // Parse-Initialisierung
     Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
     Parse.serverURL = "https://parseapi.back4app.com/";
 
@@ -91,7 +90,6 @@
       logsDiv.scrollTop = logsDiv.scrollHeight;
     }
 
-    // Korrektur: Funktionename ohne Leerzeichen
     function updateUIConnectionState(state) {
       const micBtn = document.getElementById('micButton');
       const statusLabel = document.getElementById('statusLabel');
@@ -105,7 +103,7 @@
     }
 
     // WebRTC-Initialisierung
-    async function initializeWebRTC(iceServers, clientSecret, parseSessionId) {
+    async function initializeWebRTC(iceServers, clientSecret) {
       const configuration = {
         iceServers: iceServers || [
           { urls: "stun:stun.l.google.com:19302" },
@@ -114,36 +112,11 @@
       };
 
       peerConnection = new RTCPeerConnection(configuration);
-      
-      // ICE-Kandidaten senden
-      peerConnection.onicecandidate = async (event) => {
-        if (event.candidate) {
-          try {
-            await sendSignalingData(parseSessionId, {
-              type: "candidate",
-              candidate: event.candidate.candidate,
-              sdpMid: event.candidate.sdpMid,
-              sdpMLineIndex: event.candidate.sdpMLineIndex
-            });
-            logMessage("ICE-Kandidat gesendet");
-          } catch (error) {
-            logMessage("Fehler beim Senden des ICE-Kandidaten: " + error.message);
-          }
-        }
-      };
-
-      // OpenAI-Audio empfangen
       peerConnection.ontrack = (event) => {
-        const audioEl = document.createElement('audio');
+        const audioEl = document.getElementById('openAIAudio');
         audioEl.srcObject = event.streams[0];
-        audioEl.controls = true;
-        audioEl.style.width = '100%';
-        audioEl.autoplay = true;
-        document.body.appendChild(audioEl);
-        logMessage("OpenAI Audio-Track empfangen");
       };
 
-      // Data-Channel für Kontroll-Ereignisse
       dc = peerConnection.createDataChannel("oaiControlEvents");
       dc.onopen = () => {
         logMessage("Data-Channel verbunden");
@@ -152,6 +125,9 @@
       dc.onmessage = (e) => {
         const event = JSON.parse(e.data);
         logMessage(`OpenAI Event: ${JSON.stringify(event)}`);
+        if (event.type === "error") {
+          logMessage("OpenAI-Fehler: " + event.error.message, "error");
+        }
       };
 
       return peerConnection;
@@ -171,28 +147,26 @@
         userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         userStream.getAudioTracks().forEach(track => {
           track.applyConstraints({ echoCancellation: true });
-        });
-
-        // PeerConnection initialisieren
-        peerConnection = await initializeWebRTC(
-          response.iceServers, 
-          response.clientSecret, 
-          response.sessionId
-        );
-
-        // Audio-Tracks hinzufügen
-        userStream.getAudioTracks().forEach(track => {
           if (peerConnection) {
             peerConnection.addTrack(track);
           }
         });
+
+        // PeerConnection initialisieren
+        peerConnection = await initializeWebRTC(response.iceServers, response.clientSecret);
 
         // SDP-Handshake
         const offer = await peerConnection.createOffer({ offerToReceiveAudio: true });
         await peerConnection.setLocalDescription(offer);
         logMessage("SDP-Angebot gesendet");
 
-        // SDP an OpenAI senden
+        // Signaling-Daten speichern
+        await Parse.Cloud.run("sendSignalingData", {
+          sessionId: response.sessionId,
+          data: { type: "offer", sdp: offer.sdp }
+        });
+
+        // SDP-Response von OpenAI
         const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
           method: "POST",
           body: offer.sdp,
@@ -214,7 +188,11 @@
         const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId: response.sessionId });
         signalingData.forEach(data => {
           if (data.type === "candidate") {
-            const candidate = new RTCIceCandidate(data);
+            const candidate = new RTCIceCandidate({
+              candidate: data.candidate,
+              sdpMid: data.sdpMid,
+              sdpMLineIndex: data.sdpMLineIndex
+            });
             peerConnection.addIceCandidate(candidate);
           }
         });
@@ -228,22 +206,23 @@
     // Audio-Verarbeitung
     function startAudioProcessing() {
       const audioContext = new AudioContext();
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      
       userStream.getAudioTracks().forEach(track => {
-        const source = audioContext.createMediaStreamTrackSource(track);
-        source.connect(processor);
+        const source = audioContext.createMediaStreamSource(new MediaStream([track]));
+        source.connect(audioContext.destination);
       });
-      processor.connect(audioContext.destination);
 
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
       processor.onaudioprocess = (event) => {
         const buffer = event.inputBuffer.getChannelData(0);
         const volume = Math.sqrt(buffer.reduce((sum, sample) => sum + sample ** 2, 0) / buffer.length);
         
         if (volume > 0.1) {
           isSpeaking = true;
-          dc.send(JSON.stringify({ type: "input_audio_buffer.append", audio: Array.from(buffer) }));
-          logMessage("Audio-Input hinzugefügt");
+          dc.send(JSON.stringify({
+            type: "input_audio_buffer.append",
+            audio: Array.from(buffer), // PCM16-Formatierung
+            timestamp: performance.now()
+          }));
         } else {
           if (isSpeaking) {
             setTimeout(() => {
@@ -255,6 +234,7 @@
           }
         }
       };
+      processor.connect(audioContext.destination);
     }
 
     // Verbindung starten/stoppen
@@ -278,26 +258,26 @@
       logMessage("Verbindung beendet");
     }
 
-    // Signaling-Daten senden
+    // ICE-Kandidaten senden
     async function sendSignalingData(sessionId, data) {
       try {
         await Parse.Cloud.run("sendSignalingData", {
           sessionId: sessionId,
-          data: data
+          data: data // Nur {type, candidate, sdpMid, sdpMLineIndex}!
         });
       } catch (error) {
         logMessage("Signaling-Fehler: " + error.message);
       }
     }
 
-    // Cleanup bei Browser-Schließen
-    window.addEventListener('beforeunload', stopConnection);
-
-    // PeerConnection Status-Update
+    // Event-Listener für PeerConnection-Status
     peerConnection?.addEventListener('connectionstatechange', () => {
       updateUIConnectionState(peerConnection?.connectionState);
       logMessage(`Verbindungsstatus: ${peerConnection?.connectionState}`);
     });
+
+    // Cleanup bei Browser-Schließen
+    window.addEventListener('beforeunload', stopConnection);
   </script>
 </body>
 </html>
