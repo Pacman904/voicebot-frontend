@@ -67,6 +67,7 @@
     <button id="micButton" class="mic-btn" onclick="toggleConnection()">
       <i class="fas fa-microphone"></i>
     </button>
+    <audio id="openAIAudio" style="width: 100%; margin: 15px 0;"></audio>
   </div>
 
   <!-- Font Awesome für Icons -->
@@ -81,6 +82,7 @@
     let peerConnection = null;
     let userStream = null;
     let dc = null;
+    let audioContext = null;
     let isSpeaking = false;
 
     // UI-Funktionen
@@ -107,14 +109,20 @@
       const configuration = {
         iceServers: iceServers || [
           { urls: "stun:stun.l.google.com:19302" },
-          { urls: "turn:numb.viagenie.ca", username: "webrtc@live.com", credential: "muazkh" }
+          { 
+            urls: "turn:numb.viagenie.ca", 
+            username: "webrtc@live.com", 
+            credential: "muazkh" 
+          }
         ]
       };
 
       peerConnection = new RTCPeerConnection(configuration);
       peerConnection.ontrack = (event) => {
         const audioEl = document.getElementById('openAIAudio');
-        audioEl.srcObject = event.streams[0];
+        if (audioEl) {
+          audioEl.srcObject = event.streams[0];
+        }
       };
 
       dc = peerConnection.createDataChannel("oaiControlEvents");
@@ -205,7 +213,7 @@
 
     // Audio-Verarbeitung
     function startAudioProcessing() {
-      const audioContext = new AudioContext();
+      audioContext = new AudioContext();
       userStream.getAudioTracks().forEach(track => {
         const source = audioContext.createMediaStreamSource(new MediaStream([track]));
         source.connect(audioContext.destination);
@@ -220,7 +228,7 @@
           isSpeaking = true;
           dc.send(JSON.stringify({
             type: "input_audio_buffer.append",
-            audio: Array.from(buffer), // PCM16-Formatierung
+            audio: Array.from(buffer.map(sample => sample * 32767)), // PCM16-Formatierung
             timestamp: performance.now()
           }));
         } else {
@@ -263,7 +271,7 @@
       try {
         await Parse.Cloud.run("sendSignalingData", {
           sessionId: sessionId,
-          data: data // Nur {type, candidate, sdpMid, sdpMLineIndex}!
+          data: data
         });
       } catch (error) {
         logMessage("Signaling-Fehler: " + error.message);
