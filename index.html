@@ -18,25 +18,41 @@
       padding: 30px;
       border-radius: 15px;
       box-shadow: 0 4px 30px rgba(0,0,0,0.15);
-      width: 90%; max-width: 600px;
-      height: 80%; display: flex; flex-direction: column;
+      width: 90%;
+      max-width: 600px;
+      height: 80%;
+      display: flex;
+      flex-direction: column;
     }
     .mic-btn {
-      background: #28a745; border: none;
-      border-radius: 50%; width: 100px; height: 100px;
-      cursor: pointer; font-size: 24px; color: white;
-      outline: none; transition: background 0.3s;
+      background: #28a745;
+      border: none;
+      border-radius: 50%;
+      width: 100px;
+      height: 100px;
+      cursor: pointer;
+      font-size: 24px;
+      color: white;
+      outline: none;
+      transition: background 0.3s;
       margin: auto 0 20px;
     }
-    #statusLabel { text-align: center;
-      margin-bottom: 30px; font-size: 24px;
-      color: green; display: none;
+    #statusLabel {
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 24px;
+      color: green;
+      display: none;
     }
     #consoleLogs {
-      flex: 1; padding: 15px;
-      background: #212529; color: #cccccc;
-      font-family: monospace; overflow-y: auto;
-      white-space: pre-line; margin-bottom: 10px;
+      flex: 1;
+      padding: 15px;
+      background: #212529;
+      color: #cccccc;
+      font-family: monospace;
+      overflow-y: auto;
+      white-space: pre-line;
+      margin-bottom: 10px;
     }
   </style>
 </head>
@@ -71,18 +87,6 @@
       logsDiv.scrollTop = logsDiv.scrollHeight;
     }
 
-    function updateUIConnectionState(state) {
-      const micBtn = document.getElementById('micButton');
-      const statusLabel = document.getElementById('statusLabel');
-      if (state === 'connected') {
-        micBtn.style.backgroundColor = '#dc3545';
-        statusLabel.style.display = 'block';
-      } else {
-        micBtn.style.backgroundColor = '#28a745';
-        statusLabel.style.display = 'none';
-      }
-    }
-
     async function initializeWebRTC(iceServers) {
       const configuration = {
         iceServers: iceServers || [
@@ -109,18 +113,6 @@
       dc.onopen = () => {
         logMessage("Data-Channel verbunden");
         startAudioProcessing();
-      };
-
-      dc.onmessage = (e) => {
-        try {
-          const event = JSON.parse(e.data);
-          logMessage(`OpenAI Event: ${JSON.stringify(event)}`);
-          if (event.type === "error") {
-            logMessage("OpenAI-Fehler: " + event.error.message, "error");
-          }
-        } catch (error) {
-          logMessage("Fehler beim Parsen von OpenAI Events");
-        }
       };
 
       return peerConnection;
@@ -178,13 +170,17 @@
 
     async function startAudioProcessing() {
       audioContext = new AudioContext();
-      await audioContext.audioWorklet.addModule('https://pacman904.github.io/voicebot-frontend/main/vad-processor.js'); // ← Pfad zur vad-processor.js
-      const processor = new AudioWorkletNode(audioContext, 'vad-processor');
+      await audioContext.audioWorklet.addModule('https://pacman904.github.io/voicebot-frontend/vad-processor.js'); // ← Pfad zur AudioWorklet-Datei
 
+      const processor = new AudioWorkletNode(audioContext, 'vad-processor');
       processor.port.onmessage = (event) => {
         if (event.data.type === "speech_started") {
           isSpeaking = true;
-          dc.send(JSON.stringify({ type: "input_audio_buffer.append", audio: event.data.audio, timestamp: performance.now() }));
+          dc.send(JSON.stringify({
+            type: "input_audio_buffer.append",
+            audio: event.data.audio,
+            timestamp: performance.now()
+          }));
         } else if (event.data.type === "speech_stopped") {
           isSpeaking = false;
           dc.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
@@ -192,7 +188,7 @@
       };
 
       userStream.getAudioTracks().forEach(track => {
-        const source = audioContext.createMediaStreamSource(userStream);
+        const source = audioContext.createMediaStreamTrackSource(track);
         source.connect(processor);
         processor.connect(audioContext.destination);
       });
@@ -224,6 +220,13 @@
     }
 
     window.addEventListener('beforeunload', stopConnection);
+
+    function updateUIConnectionState(state) {
+      const micBtn = document.getElementById('micButton');
+      const statusLabel = document.getElementById('statusLabel');
+      micBtn.style.backgroundColor = state === 'connected' ? '#dc3545' : '#28a745';
+      statusLabel.style.display = state === 'connected' ? 'block' : 'none';
+    }
   </script>
 </body>
 </html>
