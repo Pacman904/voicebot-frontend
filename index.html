@@ -76,7 +76,7 @@
   <!-- Parse.js -->
   <script src="https://unpkg.com/parse@latest/dist/parse.min.js"></script>
   <script>
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
+    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "YfpTJZJBjXgeGiRenMZtNbXs6FV4ZgpGZ7iJxQeu");
     Parse.serverURL = "https://parseapi.back4app.com/";
 
     let peerConnection = null;
@@ -118,7 +118,9 @@
       peerConnection = new RTCPeerConnection(configuration);
       peerConnection.ontrack = (event) => {
         const audioEl = document.getElementById('openAIAudio');
-        if (audioEl) audioEl.srcObject = event.streams[0];
+        if (audioEl && event.streams[0]) {
+          audioEl.srcObject = event.streams[0];
+        }
       };
 
       dc = peerConnection.createDataChannel("oaiControlEvents");
@@ -138,97 +140,67 @@
         }
       };
 
-      peerConnection.onicecandidate = async (event) => {
-        if (event.candidate) {
-          logMessage(`ICE-Kandidat: ${JSON.stringify(event.candidate)}`);
-          try {
-            await sendSignalingData(request.params.sessionId, { type: "candidate", candidate: event.candidate.candidate, sdpMid: event.candidate.sdpMid, sdpMLineIndex: event.candidate.sdpMLineIndex });
-          } catch (error) {
-            logMessage(`Signaling-Fehler: ${error}`, "error");
-          }
-        }
-      };
-
       return peerConnection;
     }
 
     async function startConnection() {
       try {
+        userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        userStream.getAudioTracks().forEach(track => {
+          track.applyConstraints({ echoCancellation: true });
+        });
+
         const response = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "verse"
         });
-        
-        userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        userStream.getAudioTracks().forEach(track => {
-          track.applyConstraints({ echoCancellation: true });
-          if (peerConnection) {
-            peerConnection.addTrack(track);
-          } else {
-            logMessage("peerConnection ist null", "error");
-          }
-        });
 
         peerConnection = await initializeWebRTC(response.iceServers, response.clientSecret);
+        userStream.getAudioTracks().forEach(track => {
+          if (peerConnection) {
+            peerConnection.addTrack(track);
+          }
+        });
+
         const offer = await peerConnection.createOffer({ offerToReceiveAudio: true });
         await peerConnection.setLocalDescription(offer);
-
-        await sendSignalingData(response.sessionId, { type: "offer", sdp: offer.sdp });
         logMessage("SDP-Angebot gesendet");
 
-        const answerResponse = await fetch(`https://api.openai.com/v1/realtime/sessions/${response.openaiSessionId}/offer`, {
+        await Parse.Cloud.run("sendSignalingData", {
+          sessionId: response.sessionId,
+          data: { type: "offer", sdp: offer.sdp }
+        });
+
+        const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
           method: "POST",
-          body: JSON.stringify({ sdp: offer.sdp }),
+          body: offer.sdp,
           headers: {
-            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-            "Content-Type": "application/json"
+            Authorization: `Bearer ${response.clientSecret}`,
+            "Content-Type": "application/sdp"
           }
         });
 
-        if (!answerResponse.ok) {
-          const errorData = await answerResponse.json();
-          throw new Error(`OpenAI-Fehler: ${errorData.error?.message}`);
+        if (!sdpResponse.ok) {
+          throw new Error("Fehler bei OpenAI-SDP-Verarbeitung");
         }
 
-        const answerData = await answerResponse.json();
-        const answer = new RTCSessionDescription(answerData.sdp);
-        await peerConnection.setRemoteDescription(answer);
+        const answerSdp = await sdpResponse.text();
+        await peerConnection.setRemoteDescription({ type: "answer", sdp: answerSdp });
         logMessage("SDP-Antwort empfangen");
-      } catch (error) {
-        logMessage(`Verbindungsfehler: ${error}`, "error");
-      }
-    }
 
-    async function sendSignalingData(sessionId, data) {
-      try {
-        const response = await Parse.Cloud.run("sendSignalingData", {
-          sessionId,
-          data
-        });
-        return response;
-      } catch (error) {
-        logMessage(`Signaling-Fehler: ${error}`, "error");
-        throw error;
-      }
-    }
-
-    async function handleSignaling(event) {
-      try {
-        const data = JSON.parse(event.data);
-        logMessage(`Signaling-Daten empfangen: ${JSON.stringify(data)}`);
-        if (data.type === "candidate") {
-          if (peerConnection) {
-            await peerConnection.addIceCandidate(new RTCIceCandidate(data));
-          } else {
-            logMessage("peerConnection ist null", "error");
+        const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId: response.sessionId });
+        signalingData.forEach(data => {
+          if (data.type === "candidate") {
+            const candidate = new RTCIceCandidate(data);
+            if (peerConnection) {
+              peerConnection.addIceCandidate(candidate);
+            }
           }
-        } else if (data.type === "answer") {
-          const answer = new RTCSessionDescription(data.sdp);
-          await peerConnection.setRemoteDescription(answer);
-          logMessage("SDP-Antwort empfangen");
-        }
+        });
+
+        updateUIConnectionState(peerConnection.connectionState);
       } catch (error) {
-        logMessage(`Signaling-Fehler: ${error}`, "error");
+        logMessage(`Verbindungsfehler: ${error.message}`);
       }
     }
 
@@ -240,52 +212,52 @@
         const volume = Math.sqrt(buffer.reduce((sum, sample) => sum + sample ** 2, 0) / buffer.length);
         
         if (volume > 0.1) {
+          isSpeaking = true;
           dc.send(JSON.stringify({
             type: "input_audio_buffer.append",
-            audio: Array.from(buffer).map(sample => Math.min(Math.max(sample * 32767, -32768), 32767)), // Skalierung auf 16-Bit PCM
+            audio: Array.from(buffer).map(sample => Math.min(Math.max(sample * 32767, -32768), 32767)),
             timestamp: performance.now()
           }));
+        } else {
+          if (isSpeaking) {
+            setTimeout(() => {
+              if (!isSpeaking) {
+                dc.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+                logMessage("Audio-Input abgeschlossen");
+              }
+            }, 1000);
+          }
         }
       };
-
-      userStream.getAudioTracks().forEach(track => {
-        const source = audioContext.createMediaStreamSource(userStream);
-        source.connect(processor);
-        processor.connect(audioContext.destination);
-      });
+      processor.connect(audioContext.destination);
     }
 
-    function toggleConnection() {
-      if (!isSpeaking) {
-        startConnection();
-        isSpeaking = true;
+    async function toggleConnection() {
+      if (peerConnection?.connectionState === 'connected') {
+        await stopConnection();
       } else {
-        if (peerConnection) {
-          peerConnection.close();
-          peerConnection = null;
-        }
-        if (userStream) {
-          userStream.getTracks().forEach(track => track.stop());
-          userStream = null;
-        }
-        if (audioContext) {
-          audioContext.close();
-          audioContext = null;
-        }
-        isSpeaking = false;
-        updateUIConnectionState('disconnected');
-        logMessage("Verbindung beendet");
+        await startConnection();
       }
     }
 
-    peerConnection.ontrack = (event) => {
-      const audioEl = document.getElementById('openAIAudio');
-      if (audioEl && event.streams[0]) {
-        audioEl.srcObject = event.streams[0];
-      } else {
-        logMessage("Audio-Element oder Stream ist null", "error");
+    async function stopConnection() {
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
       }
-    };
+      if (userStream) {
+        userStream.getTracks().forEach(track => track.stop());
+        userStream = null;
+      }
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+      }
+      logMessage("Verbindung beendet");
+      updateUIConnectionState('disconnected');
+    }
+
+    window.addEventListener('beforeunload', stopConnection);
   </script>
 </body>
 </html>
