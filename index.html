@@ -74,9 +74,9 @@
   <script src="https://kit.fontawesome.com/845924f09c.js" crossorigin="anonymous"></script>
   
   <!-- Parse.js -->
-  <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
+  <script src="https://unpkg.com/parse@latest/dist/parse.min.js"></script>
   <script>
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
+    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "YfpTJZJBjXgeGiRenMZtNbXs6FV4ZgpGZ7iJxQeu");
     Parse.serverURL = "https://parseapi.back4app.com/";
 
     let peerConnection = null;
@@ -107,7 +107,11 @@
       const configuration = {
         iceServers: iceServers || [
           { urls: "stun:stun.l.google.com:19302" },
-          { urls: "turn:192.158.29.39:3478?transport=udp", username: "28224511:1379330808", credential: "JZEOEt2V3Qb0y27GRntt2u2PAYA=" }
+          { 
+            urls: "turn:numb.viagenie.ca", 
+            username: process.env.TURN_USERNAME, 
+            credential: process.env.TURN_CREDENTIAL 
+          }
         ]
       };
 
@@ -134,6 +138,17 @@
         }
       };
 
+      peerConnection.onicecandidate = async (event) => {
+        if (event.candidate) {
+          logMessage(`ICE-Kandidat: ${JSON.stringify(event.candidate)}`);
+          try {
+            await sendSignalingData(request.params.sessionId, { type: "candidate", candidate: event.candidate.candidate, sdpMid: event.candidate.sdpMid, sdpMLineIndex: event.candidate.sdpMLineIndex });
+          } catch (error) {
+            logMessage(`Signaling-Fehler: ${error}`, "error");
+          }
+        }
+      };
+
       return peerConnection;
     }
 
@@ -147,105 +162,130 @@
         userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         userStream.getAudioTracks().forEach(track => {
           track.applyConstraints({ echoCancellation: true });
-          peerConnection.addTrack(track);
+          if (peerConnection) {
+            peerConnection.addTrack(track);
+          } else {
+            logMessage("peerConnection ist null", "error");
+          }
         });
 
         peerConnection = await initializeWebRTC(response.iceServers, response.clientSecret);
         const offer = await peerConnection.createOffer({ offerToReceiveAudio: true });
         await peerConnection.setLocalDescription(offer);
 
-        await Parse.Cloud.run("sendSignalingData", {
-          sessionId: response.sessionId,
-          data: { type: "offer", sdp: offer.sdp }
-        });
+        await sendSignalingData(response.sessionId, { type: "offer", sdp: offer.sdp });
+        logMessage("SDP-Angebot gesendet");
 
-        const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
+        const answerResponse = await fetch(`https://api.openai.com/v1/realtime/sessions/${response.openaiSessionId}/offer`, {
           method: "POST",
-          body: offer.sdp,
+          body: JSON.stringify({ sdp: offer.sdp }),
           headers: {
-            Authorization: `Bearer ${response.clientSecret}`,
-            "Content-Type": "application/sdp"
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+            "Content-Type": "application/json"
           }
         });
 
-        if (!sdpResponse.ok) {
-          throw new Error("Fehler bei OpenAI-SDP-Verarbeitung");
+        if (!answerResponse.ok) {
+          const errorData = await answerResponse.json();
+          throw new Error(`OpenAI-Fehler: ${errorData.error?.message}`);
         }
 
-        const answerSdp = await sdpResponse.text();
-        await peerConnection.setRemoteDescription({ type: "answer", sdp: answerSdp });
-
-        const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId: response.sessionId });
-        signalingData.forEach(data => {
-          if (data.type === "candidate") {
-            const candidate = new RTCIceCandidate(data);
-            peerConnection.addIceCandidate(candidate);
-          }
-        });
-
-        updateUIConnectionState(peerConnection.connectionState);
+        const answerData = await answerResponse.json();
+        const answer = new RTCSessionDescription(answerData.sdp);
+        await peerConnection.setRemoteDescription(answer);
+        logMessage("SDP-Antwort empfangen");
       } catch (error) {
-        logMessage(`Verbindungsfehler: ${error.message}`);
+        logMessage(`Verbindungsfehler: ${error}`, "error");
+      }
+    }
+
+    async function sendSignalingData(sessionId, data) {
+      try {
+        const response = await Parse.Cloud.run("sendSignalingData", {
+          sessionId,
+          data
+        });
+        return response;
+      } catch (error) {
+        logMessage(`Signaling-Fehler: ${error}`, "error");
+        throw error;
+      }
+    }
+
+    async function handleSignaling(event) {
+      try {
+        const data = JSON.parse(event.data);
+        logMessage(`Signaling-Daten empfangen: ${JSON.stringify(data)}`);
+        if (data.type === "candidate") {
+          if (peerConnection) {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(data));
+          } else {
+            logMessage("peerConnection ist null", "error");
+          }
+        } else if (data.type === "answer") {
+          const answer = new RTCSessionDescription(data.sdp);
+          await peerConnection.setRemoteDescription(answer);
+          logMessage("SDP-Antwort empfangen");
+        }
+      } catch (error) {
+        logMessage(`Signaling-Fehler: ${error}`, "error");
       }
     }
 
     function startAudioProcessing() {
       audioContext = new AudioContext();
-      userStream.getAudioTracks().forEach(track => {
-        const source = audioContext.createMediaStreamSource(new MediaStream([track]));
-        source.connect(audioContext.destination);
-      });
-
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       processor.onaudioprocess = (event) => {
         const buffer = event.inputBuffer.getChannelData(0);
         const volume = Math.sqrt(buffer.reduce((sum, sample) => sum + sample ** 2, 0) / buffer.length);
         
         if (volume > 0.1) {
-          isSpeaking = true;
           dc.send(JSON.stringify({
             type: "input_audio_buffer.append",
-            audio: Array.from(buffer.map(sample => sample * 32767)),
+            audio: Array.from(buffer).map(sample => Math.min(Math.max(sample * 32767, -32768), 32767)), // Skalierung auf 16-Bit PCM
             timestamp: performance.now()
           }));
-        } else {
-          if (isSpeaking) {
-            setTimeout(() => {
-              if (!isSpeaking) {
-                dc.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-              }
-            }, 1000);
-          }
         }
       };
-      processor.connect(audioContext.destination);
+
+      userStream.getAudioTracks().forEach(track => {
+        const source = audioContext.createMediaStreamSource(userStream);
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+      });
     }
 
-    async function toggleConnection() {
-      if (peerConnection?.connectionState === 'connected') {
-        await stopConnection();
+    function toggleConnection() {
+      if (!isSpeaking) {
+        startConnection();
+        isSpeaking = true;
       } else {
-        await startConnection();
+        if (peerConnection) {
+          peerConnection.close();
+          peerConnection = null;
+        }
+        if (userStream) {
+          userStream.getTracks().forEach(track => track.stop());
+          userStream = null;
+        }
+        if (audioContext) {
+          audioContext.close();
+          audioContext = null;
+        }
+        isSpeaking = false;
+        updateUIConnectionState('disconnected');
+        logMessage("Verbindung beendet");
       }
     }
 
-    async function stopConnection() {
-      if (peerConnection) {
-        peerConnection.close();
-        peerConnection = null;
+    peerConnection.ontrack = (event) => {
+      const audioEl = document.getElementById('openAIAudio');
+      if (audioEl && event.streams[0]) {
+        audioEl.srcObject = event.streams[0];
+      } else {
+        logMessage("Audio-Element oder Stream ist null", "error");
       }
-      if (userStream) {
-        userStream.getTracks().forEach(track => track.stop());
-        userStream = null;
-      }
-      logMessage("Verbindung beendet");
-    }
-
-    window.addEventListener('beforeunload', stopConnection);
-    peerConnection?.addEventListener('connectionstatechange', () => {
-      updateUIConnectionState(peerConnection?.connectionState);
-      logMessage(`Verbindungsstatus: ${peerConnection?.connectionState}`);
-    });
+    };
   </script>
 </body>
 </html>
