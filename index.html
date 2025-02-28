@@ -70,13 +70,10 @@
     <audio id="openAIAudio" style="width: 100%; margin: 15px 0;" crossorigin="anonymous"></audio>
   </div>
 
-  <!-- Font Awesome -->
-  <script src="https://kit.fontawesome.com/845924f09c.js" crossorigin="anonymous"></script>
-  
   <!-- Parse.js -->
   <script src="https://unpkg.com/parse@latest/dist/parse.min.js"></script>
   <script>
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
+    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "YOUR_JAVASCRIPT_KEY");
     Parse.serverURL = "https://parseapi.back4app.com/";
 
     let peerConnection = null;
@@ -103,23 +100,25 @@
       }
     }
 
-    async function initializeWebRTC(iceServers, clientSecret) {
+    async function initializeWebRTC(iceServers) {
       const configuration = {
         iceServers: iceServers || [
           { urls: "stun:stun.l.google.com:19302" },
           { 
             urls: "turn:numb.viagenie.ca", 
-            username: "webrtc@live.com", 
-            credential: "muazkh"
+            username: "YOUR_TURN_USERNAME", 
+            credential: "YOUR_TURN_CREDENTIAL" 
           }
         ]
       };
 
       peerConnection = new RTCPeerConnection(configuration);
+      const audioEl = document.getElementById('openAIAudio');
+
       peerConnection.ontrack = (event) => {
-        const audioEl = document.getElementById('openAIAudio');
         if (audioEl && event.streams[0]) {
           audioEl.srcObject = event.streams[0];
+          logMessage("OpenAI Audio-Stream aktiv");
         }
       };
 
@@ -128,6 +127,7 @@
         logMessage("Data-Channel verbunden");
         startAudioProcessing();
       };
+
       dc.onmessage = (e) => {
         try {
           const event = JSON.parse(e.data);
@@ -137,6 +137,19 @@
           }
         } catch (error) {
           logMessage("Fehler beim Parsen von OpenAI Events");
+        }
+      };
+
+      peerConnection.onicecandidate = async (event) => {
+        if (event.candidate) {
+          try {
+            await Parse.Cloud.run("sendSignalingData", {
+              sessionId: peerConnection.sessionId,
+              data: { type: "candidate", ...event.candidate }
+            });
+          } catch (error) {
+            logMessage(`Signaling-Fehler: ${error}`, "error");
+          }
         }
       };
 
@@ -155,46 +168,38 @@
           voice: "verse"
         });
 
-        peerConnection = await initializeWebRTC(response.iceServers, response.clientSecret);
-        userStream.getAudioTracks().forEach(track => {
-          if (peerConnection) {
-            peerConnection.addTrack(track);
-          }
-        });
+        peerConnection = await initializeWebRTC(response.iceServers);
+        peerConnection.sessionId = response.sessionId;
+        userStream.getAudioTracks().forEach(track => peerConnection.addTrack(track));
 
         const offer = await peerConnection.createOffer({ offerToReceiveAudio: true });
         await peerConnection.setLocalDescription(offer);
-        logMessage("SDP-Angebot gesendet");
 
         await Parse.Cloud.run("sendSignalingData", {
           sessionId: response.sessionId,
           data: { type: "offer", sdp: offer.sdp }
         });
 
-        const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
+        const answerResponse = await fetch(`https://api.openai.com/v1/realtime/sessions/${response.openaiSessionId}/offer`, {
           method: "POST",
-          body: offer.sdp,
+          body: JSON.stringify({ sdp: offer.sdp }),
           headers: {
             Authorization: `Bearer ${response.clientSecret}`,
-            "Content-Type": "application/sdp"
+            "Content-Type": "application/json"
           }
         });
 
-        if (!sdpResponse.ok) {
+        if (!answerResponse.ok) {
           throw new Error("Fehler bei OpenAI-SDP-Verarbeitung");
         }
 
-        const answerSdp = await sdpResponse.text();
-        await peerConnection.setRemoteDescription({ type: "answer", sdp: answerSdp });
-        logMessage("SDP-Antwort empfangen");
+        const answerData = await answerResponse.json();
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(answerData.sdp));
 
         const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId: response.sessionId });
         signalingData.forEach(data => {
           if (data.type === "candidate") {
-            const candidate = new RTCIceCandidate(data);
-            if (peerConnection) {
-              peerConnection.addIceCandidate(candidate);
-            }
+            peerConnection.addIceCandidate(new RTCIceCandidate(data));
           }
         });
 
