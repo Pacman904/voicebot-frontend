@@ -18,45 +18,25 @@
       padding: 30px;
       border-radius: 15px;
       box-shadow: 0 4px 30px rgba(0,0,0,0.15);
-      width: 90%;
-      max-width: 600px;
-      height: 80%;
-      display: flex;
-      flex-direction: column;
+      width: 90%; max-width: 600px;
+      height: 80%; display: flex; flex-direction: column;
     }
     .mic-btn {
-      background: #28a745;
-      border: none;
-      border-radius: 50%;
-      width: 100px;
-      height: 100px;
-      cursor: pointer;
-      font-size: 24px;
-      color: white;
-      outline: none;
-      transition: background 0.3s;
-      margin: auto;
-      margin-bottom: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      background: #28a745; border: none;
+      border-radius: 50%; width: 100px; height: 100px;
+      cursor: pointer; font-size: 24px; color: white;
+      outline: none; transition: background 0.3s;
+      margin: auto 0 20px;
     }
-    #statusLabel {
-      text-align: center;
-      margin-bottom: 30px;
-      font-size: 24px;
-      color: green;
-      display: none;
+    #statusLabel { text-align: center;
+      margin-bottom: 30px; font-size: 24px;
+      color: green; display: none;
     }
     #consoleLogs {
-      flex: 1;
-      padding: 15px;
-      background: #212529;
-      color: #cccccc;
-      font-family: monospace;
-      overflow-y: auto;
-      white-space: pre-line;
-      margin-bottom: 10px;
+      flex: 1; padding: 15px;
+      background: #212529; color: #cccccc;
+      font-family: monospace; overflow-y: auto;
+      white-space: pre-line; margin-bottom: 10px;
     }
   </style>
 </head>
@@ -70,10 +50,13 @@
     <audio id="openAIAudio" style="width: 100%; margin: 15px 0;" crossorigin="anonymous"></audio>
   </div>
 
+  <!-- Font Awesome -->
+  <script src="https://kit.fontawesome.com/845924f09c.js" crossorigin="anonymous"></script>
+  
   <!-- Parse.js -->
   <script src="https://unpkg.com/parse@latest/dist/parse.min.js"></script>
   <script>
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "YOUR_JAVASCRIPT_KEY");
+    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM"); // ← Setze deinen JavaScript Key
     Parse.serverURL = "https://parseapi.back4app.com/";
 
     let peerConnection = null;
@@ -105,9 +88,9 @@
         iceServers: iceServers || [
           { urls: "stun:stun.l.google.com:19302" },
           { 
-            urls: "turn:numb.viagenie.ca", 
-            username: "YOUR_TURN_USERNAME", 
-            credential: "YOUR_TURN_CREDENTIAL" 
+            urls: "turn:turn.anyfirewall.com:443?transport=tcp", 
+            username: "webrtc", 
+            credential: "webrtc" 
           }
         ]
       };
@@ -140,28 +123,13 @@
         }
       };
 
-      peerConnection.onicecandidate = async (event) => {
-        if (event.candidate) {
-          try {
-            await Parse.Cloud.run("sendSignalingData", {
-              sessionId: peerConnection.sessionId,
-              data: { type: "candidate", ...event.candidate }
-            });
-          } catch (error) {
-            logMessage(`Signaling-Fehler: ${error}`, "error");
-          }
-        }
-      };
-
       return peerConnection;
     }
 
     async function startConnection() {
       try {
         userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        userStream.getAudioTracks().forEach(track => {
-          track.applyConstraints({ echoCancellation: true });
-        });
+        userStream.getAudioTracks().forEach(track => track.applyConstraints({ echoCancellation: true }));
 
         const response = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-mini-realtime-preview-2024-12-17",
@@ -169,7 +137,6 @@
         });
 
         peerConnection = await initializeWebRTC(response.iceServers);
-        peerConnection.sessionId = response.sessionId;
         userStream.getAudioTracks().forEach(track => peerConnection.addTrack(track));
 
         const offer = await peerConnection.createOffer({ offerToReceiveAudio: true });
@@ -209,32 +176,26 @@
       }
     }
 
-    function startAudioProcessing() {
+    async function startAudioProcessing() {
       audioContext = new AudioContext();
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      processor.onaudioprocess = (event) => {
-        const buffer = event.inputBuffer.getChannelData(0);
-        const volume = Math.sqrt(buffer.reduce((sum, sample) => sum + sample ** 2, 0) / buffer.length);
-        
-        if (volume > 0.1) {
+      await audioContext.audioWorklet.addModule('https://pacman904.github.io/voicebot-frontend/main/vad-processor.js'); // ← Pfad zur vad-processor.js
+      const processor = new AudioWorkletNode(audioContext, 'vad-processor');
+
+      processor.port.onmessage = (event) => {
+        if (event.data.type === "speech_started") {
           isSpeaking = true;
-          dc.send(JSON.stringify({
-            type: "input_audio_buffer.append",
-            audio: Array.from(buffer).map(sample => Math.min(Math.max(sample * 32767, -32768), 32767)),
-            timestamp: performance.now()
-          }));
-        } else {
-          if (isSpeaking) {
-            setTimeout(() => {
-              if (!isSpeaking) {
-                dc.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-                logMessage("Audio-Input abgeschlossen");
-              }
-            }, 1000);
-          }
+          dc.send(JSON.stringify({ type: "input_audio_buffer.append", audio: event.data.audio, timestamp: performance.now() }));
+        } else if (event.data.type === "speech_stopped") {
+          isSpeaking = false;
+          dc.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
         }
       };
-      processor.connect(audioContext.destination);
+
+      userStream.getAudioTracks().forEach(track => {
+        const source = audioContext.createMediaStreamSource(userStream);
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+      });
     }
 
     async function toggleConnection() {
