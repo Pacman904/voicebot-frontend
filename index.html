@@ -72,7 +72,7 @@
   <!-- Parse.js -->
   <script src="https://unpkg.com/parse@latest/dist/parse.min.js"></script>
   <script>
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM"); // ← Setze deinen JavaScript Key
+    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM"); // YOUR_JAVASCRIPT_KEY gesetzt
     Parse.serverURL = "https://parseapi.back4app.com/";
 
     let peerConnection = null;
@@ -113,6 +113,18 @@
       dc.onopen = () => {
         logMessage("Data-Channel verbunden");
         startAudioProcessing();
+      };
+
+      dc.onmessage = (e) => {
+        try {
+          const event = JSON.parse(e.data);
+          logMessage(`OpenAI Event: ${JSON.stringify(event)}`);
+          if (event.type === "error") {
+            logMessage("OpenAI-Fehler: " + event.error.message, "error");
+          }
+        } catch (error) {
+          logMessage("Fehler beim Parsen von OpenAI Events");
+        }
       };
 
       return peerConnection;
@@ -170,9 +182,9 @@
 
     async function startAudioProcessing() {
       audioContext = new AudioContext();
-      await audioContext.audioWorklet.addModule('https://pacman904.github.io/voicebot-frontend/vad-processor.js'); // ← Pfad zur AudioWorklet-Datei
-
+      await audioContext.audioWorklet.addModule('https://pacman904.github.io/voicebot-frontend/vad-processor.js'); // vad-processor.js-URL korrigiert
       const processor = new AudioWorkletNode(audioContext, 'vad-processor');
+
       processor.port.onmessage = (event) => {
         if (event.data.type === "speech_started") {
           isSpeaking = true;
