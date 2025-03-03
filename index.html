@@ -70,9 +70,9 @@
   <script src="https://kit.fontawesome.com/845924f09c.js" crossorigin="anonymous"></script>
   
   <!-- Parse.js -->
-  <script src="https://unpkg.com/parse@latest/dist/parse.min.js"></script>
+  <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM"); // YOUR_JAVASCRIPT_KEY
+    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
     Parse.serverURL = "https://parseapi.back4app.com/";
 
     let peerConnection = null;
@@ -91,11 +91,7 @@
       const configuration = {
         iceServers: iceServers || [
           { urls: "stun:stun.l.google.com:19302" },
-          { 
-            urls: "turn:turn.anyfirewall.com:443?transport=tcp", 
-            username: "webrtc", 
-            credential: "webrtc" 
-          }
+          { urls: "turn:turn.anyfirewall.com:443?transport=tcp", username: "webrtc", credential: "webrtc" }
         ]
       };
 
@@ -190,13 +186,12 @@
         if (event.data.type === "speech_started") {
           isSpeaking = true;
           dc.send(JSON.stringify({
-            type: "input_audio_buffer.append",
-            audio: event.data.audio,
+            type: "input_audio_stream.start",
             timestamp: performance.now()
           }));
         } else if (event.data.type === "speech_stopped") {
           isSpeaking = false;
-          dc.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+          dc.send(JSON.stringify({ type: "input_audio_stream.stop" }));
         }
       };
 
@@ -232,13 +227,9 @@
       updateUIConnectionState('disconnected');
     }
 
-    window.addEventListener('beforeunload', stopConnection);
-
     function updateUIConnectionState(state) {
       const micBtn = document.getElementById('micButton');
-      const statusLabel = document.getElementById('statusLabel');
       micBtn.style.backgroundColor = state === 'connected' ? '#dc3545' : '#28a745';
-      statusLabel.style.display = state === 'connected' ? 'block' : 'none';
     }
   </script>
 </body>
