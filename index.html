@@ -18,8 +18,11 @@
       padding: 30px;
       border-radius: 15px;
       box-shadow: 0 4px 30px rgba(0,0,0,0.15);
-      width: 90%; max-width: 600px;
-      height: 80%; display: flex; flex-direction: column;
+      width: 90%;
+      max-width: 600px;
+      height: 80%;
+      display: flex;
+      flex-direction: column;
     }
     .mic-btn {
       background: #28a745;
@@ -86,8 +89,7 @@
     async function initializeWebRTC(iceServers) {
       const configuration = {
         iceServers: iceServers || [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:global.stun.vserville.com" },
+          { urls: "stun:stun.relay.metered.ca:80" },
           { 
             urls: "turn:global.relay.metered.ca:80?transport=udp", 
             username: "dabe0db86808a99aa36c7309", 
@@ -99,7 +101,8 @@
             credential: "n7sdOC9KUqBloUJ4" 
           }
         ],
-        iceTransportPolicy: "relay"
+        iceTransportPolicy: "relay",
+        rtcpMuxPolicy: "require"
       };
 
       peerConnection = new RTCPeerConnection(configuration);
@@ -150,8 +153,8 @@
           data: { type: "offer", sdp: offer.sdp }
         });
 
-        //珊瑚修正：Korrekte OpenAI-Endpunkt-URL
-        const answerResponse = await fetch(`https://api.openai.com/v1/realtime/sessions/${response.openaiSessionId}`, {
+        //珊瑚修正：Korrekte OpenAI-Endpunkt-URL mit "/offer"
+        const answerResponse = await fetch(`https://api.openai.com/v1/realtime/sessions/${response.openaiSessionId}/offer`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${response.clientSecret}`,
@@ -189,7 +192,7 @@
         if (event.data.type === "speech_started") {
           dc.send(JSON.stringify({
             type: "input_audio_stream.start",
-            audio: Array.from(event.inputBuffer[0].getChannelData(0)),
+            audio: Array.from(event.inputBuffer[0].getChannelData(0)).map(sample => Math.min(Math.max(sample * 32767, -32768), 32767)),
             timestamp: performance.now()
           }));
         } else if (event.data.type === "speech_stopped") {
