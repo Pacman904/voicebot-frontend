@@ -138,7 +138,7 @@
         userStream.getAudioTracks().forEach(track => track.applyConstraints({ echoCancellation: true }));
 
         const response = await Parse.Cloud.run("createEphemeralSession", {
-          model: "gpt-4o-mini-realtime-preview-2024-12-17", //珊瑚修正：Aktualisierter Modellname
+          model: "gpt-4o-mini-realtime-preview", //珊瑚修正：Aktualisierter Modellname
           voice: "verse"
         });
 
