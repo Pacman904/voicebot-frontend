@@ -66,20 +66,16 @@
     <audio id="openAIAudio" style="width: 100%; margin: 15px 0;" crossorigin="anonymous"></audio>
   </div>
 
-  <!-- Font Awesome -->
-  <script src="https://kit.fontawesome.com/845924f09c.js" crossorigin="anonymous"></script>
-  
   <!-- Parse.js -->
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM"); // YOUR_JAVASCRIPT_KEY
+    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
     Parse.serverURL = "https://parseapi.back4app.com/";
 
     let peerConnection = null;
     let userStream = null;
     let dc = null;
     let audioContext = null;
-    let isSpeaking = false;
 
     function logMessage(message) {
       const logsDiv = document.getElementById('consoleLogs');
@@ -90,9 +86,18 @@
     async function initializeWebRTC(iceServers) {
       const configuration = {
         iceServers: iceServers || [
-          { urls: "stun:stun.relay.metered.ca:80" },
-          { urls: "turn:global.relay.metered.ca:80?transport=udp", username: "dabe0db86808a99aa36c7309", credential: "n7sdOC9KUqBloUJ4" },
-          { urls: "turn:global.relay.metered.ca:443?transport=tcp", username: "dabe0db86808a99aa36c7309", credential: "n7sdOC9KUqBloUJ4" }
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:global.stun.vserville.com" },
+          { 
+            urls: "turn:global.relay.metered.ca:80?transport=udp", 
+            username: "dabe0db86808a99aa36c7309", 
+            credential: "n7sdOC9KUqBloUJ4" 
+          },
+          { 
+            urls: "turn:global.relay.metered.ca:443?transport=tcp", 
+            username: "dabe0db86808a99aa36c7309", 
+            credential: "n7sdOC9KUqBloUJ4" 
+          }
         ]
       };
 
@@ -100,7 +105,7 @@
       const audioEl = document.getElementById('openAIAudio');
 
       peerConnection.ontrack = (event) => {
-        if (audioEl && event.streams[0]) {
+        if (event.streams[0]) {
           audioEl.srcObject = event.streams[0];
           logMessage("OpenAI Audio-Stream aktiv");
         }
@@ -133,7 +138,7 @@
         userStream.getAudioTracks().forEach(track => track.applyConstraints({ echoCancellation: true }));
 
         const response = await Parse.Cloud.run("createEphemeralSession", {
-          model: "gpt-4o-mini-realtime-preview-2024-12-17",
+          model: "gpt-4o-realtime-preview", //珊瑚修正：Aktualisierter Modellname
           voice: "verse"
         });
 
@@ -190,13 +195,11 @@
       const processor = new AudioWorkletNode(audioContext, 'vad-processor');
       processor.port.onmessage = (event) => {
         if (event.data.type === "speech_started") {
-          isSpeaking = true;
           dc.send(JSON.stringify({
             type: "input_audio_stream.start",
             timestamp: performance.now()
           }));
         } else if (event.data.type === "speech_stopped") {
-          isSpeaking = false;
           dc.send(JSON.stringify({ type: "input_audio_stream.stop" }));
         }
       };
