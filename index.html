@@ -18,11 +18,8 @@
       padding: 30px;
       border-radius: 15px;
       box-shadow: 0 4px 30px rgba(0,0,0,0.15);
-      width: 90%;
-      max-width: 600px;
-      height: 80%;
-      display: flex;
-      flex-direction: column;
+      width: 90%; max-width: 600px;
+      height: 80%; display: flex; flex-direction: column;
     }
     .mic-btn {
       background: #28a745;
@@ -101,25 +98,22 @@
             username: "dabe0db86808a99aa36c7309", 
             credential: "n7sdOC9KUqBloUJ4" 
           }
-        ]
+        ],
+        iceTransportPolicy: "relay"
       };
 
       peerConnection = new RTCPeerConnection(configuration);
       const audioEl = document.getElementById('openAIAudio');
 
       peerConnection.ontrack = (event) => {
-        if (event.streams[0]) {
+        if (audioEl && event.streams[0]) {
           audioEl.srcObject = event.streams[0];
           logMessage("OpenAI Audio-Stream aktiv");
         }
       };
 
       dc = peerConnection.createDataChannel("oaiControlEvents");
-      dc.onopen = () => {
-        logMessage("Data-Channel verbunden");
-        startAudioProcessing();
-      };
-
+      dc.onopen = startAudioProcessing;
       dc.onmessage = (e) => {
         try {
           const event = JSON.parse(e.data);
@@ -141,7 +135,7 @@
         userStream.getAudioTracks().forEach(track => track.applyConstraints({ echoCancellation: true }));
 
         const response = await Parse.Cloud.run("createEphemeralSession", {
-          model: "gpt-4o-realtime-preview", //珊瑚修正：Aktuellster stabiler Modellname
+          model: "gpt-4o-realtime-preview",
           voice: "verse"
         });
 
@@ -156,14 +150,14 @@
           data: { type: "offer", sdp: offer.sdp }
         });
 
-        //珊瑚修正：Korrekte Endpunkt-URL (ohne "/offer")
+        //珊瑚修正：Korrekte OpenAI-Endpunkt-URL
         const answerResponse = await fetch(`https://api.openai.com/v1/realtime/sessions/${response.openaiSessionId}`, {
           method: "POST",
-          body: JSON.stringify({ sdp: offer.sdp }),
           headers: {
             Authorization: `Bearer ${response.clientSecret}`,
             "Content-Type": "application/json"
-          }
+          },
+          body: JSON.stringify({ sdp: offer.sdp })
         });
 
         if (!answerResponse.ok) {
@@ -188,29 +182,24 @@
 
     async function startAudioProcessing() {
       audioContext = new AudioContext();
-      try {
-        await audioContext.audioWorklet.addModule('https://pacman904.github.io/voicebot-frontend/vad-processor.js');
-      } catch (error) {
-        logMessage("Fehler beim Laden von vad-processor.js: " + error.message);
-        return;
-      }
+      await audioContext.audioWorklet.addModule('https://pacman904.github.io/voicebot-frontend/vad-processor.js');
 
-      const processor = new AudioWorkletNode(audioContext, 'vad-processor');
+      const processor = new AudioWorkletNode(audioContext, 'vad-processor', { numberOfInputs: 1 });
       processor.port.onmessage = (event) => {
         if (event.data.type === "speech_started") {
           dc.send(JSON.stringify({
             type: "input_audio_stream.start",
+            audio: Array.from(event.inputBuffer[0].getChannelData(0)),
             timestamp: performance.now()
           }));
         } else if (event.data.type === "speech_stopped") {
-          dc.send(JSON.stringify({ type: "input_audio_stream.stop" }));
+          dc.send(JSON.stringify({ type: "input_audio_stream.stop", timestamp: performance.now() }));
         }
       };
 
       userStream.getAudioTracks().forEach(track => {
         const source = audioContext.createMediaStreamTrackSource(track);
         source.connect(processor);
-        processor.connect(audioContext.destination);
       });
     }
 
