@@ -18,8 +18,11 @@
       padding: 30px;
       border-radius: 15px;
       box-shadow: 0 4px 30px rgba(0,0,0,0.15);
-      width: 90%; max-width: 600px;
-      height: 80%; display: flex; flex-direction: column;
+      width: 90%;
+      max-width: 600px;
+      height: 80%;
+      display: flex;
+      flex-direction: column;
     }
     .mic-btn {
       background: #28a745;
@@ -63,13 +66,10 @@
     <audio id="openAIAudio" style="width: 100%; margin: 15px 0;" crossorigin="anonymous"></audio>
   </div>
 
-  <!-- Font Awesome -->
-  <script src="https://kit.fontawesome.com/845924f09c.js" crossorigin="anonymous"></script>
-  
   <!-- Parse.js -->
   <script src="https://unpkg.com/parse@latest/dist/parse.min.js"></script>
   <script>
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM"); // YOUR_JAVASCRIPT_KEY
+    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
     Parse.serverURL = "https://parseapi.back4app.com/";
 
     let peerConnection = null;
@@ -88,11 +88,7 @@
       const configuration = {
         iceServers: iceServers || [
           { urls: "stun:stun.l.google.com:19302" },
-          { 
-            urls: "turn:turn.anyfirewall.com:443?transport=tcp", 
-            username: "webrtc", 
-            credential: "webrtc" 
-          }
+          { urls: "turn:turn.anyfirewall.com:443?transport=tcp", username: "webrtc", credential: "webrtc" }
         ]
       };
 
@@ -148,13 +144,13 @@
           data: { type: "offer", sdp: offer.sdp }
         });
 
-        //珊瑚修正：Korrekte Content-Type-Header für SDP
-        const answerResponse = await fetch(`https://api.openai.com/v1/realtime/sessions/${response.openaiSessionId}`, {
+        //珊瑚修正：Korrekte OpenAI-Endpunkt-URL
+        const answerResponse = await fetch(`https://api.openai.com/v1/realtime/sessions/${response.openaiSessionId}/offer`, {
           method: "POST",
-          body: offer.sdp, //珊瑚修正：Ohne JSON-Wrapping
+          body: JSON.stringify({ sdp: offer.sdp }),
           headers: {
             Authorization: `Bearer ${response.clientSecret}`,
-            "Content-Type": "application/sdp" //珊瑚修正：Anstatt application/json
+            "Content-Type": "application/json"
           }
         });
 
@@ -180,7 +176,12 @@
 
     async function startAudioProcessing() {
       audioContext = new AudioContext();
-      await audioContext.audioWorklet.addModule('https://pacman904.github.io/voicebot-frontend/vad-processor.js');
+      try {
+        await audioContext.audioWorklet.addModule('https://pacman904.github.io/voicebot-frontend/vad-processor.js');
+      } catch (error) {
+        logMessage("Fehler beim Laden von vad-processor.js: " + error.message);
+        return;
+      }
 
       const processor = new AudioWorkletNode(audioContext, 'vad-processor');
       processor.port.onmessage = (event) => {
