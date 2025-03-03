@@ -18,7 +18,8 @@ class VADProcessor extends AudioWorkletProcessor {
       this.speaking = true;
       this.port.postMessage({
         type: "speech_started",
-        audio: Float32Array.from(buffer).map(s => Math.min(Math.max(s * 32767, -32768), 32767))
+        audio: Float32Array.from(buffer).map(s => Math.min(Math.max(s * 32767, -32768), 32767)
+        )
       });
     } else if (volume < this.threshold * 0.5 && this.speaking) {
       this.speaking = false;
