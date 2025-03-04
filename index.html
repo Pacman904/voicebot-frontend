@@ -4,69 +4,22 @@
   <meta charset="UTF-8">
   <title>OpenAI VoiceBot</title>
   <style>
-    body {
-      font-family: Arial;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      margin: 0;
-      background: #f8f9fa;
-    }
-    .container {
-      background: white;
-      padding: 30px;
-      border-radius: 15px;
-      box-shadow: 0 4px 30px rgba(0,0,0,0.15);
-      width: 90%;
-      max-width: 600px;
-      height: 80%;
-      display: flex;
-      flex-direction: column;
-    }
-    .mic-btn {
-      background: #28a745;
-      border: none;
-      border-radius: 50%;
-      width: 100px;
-      height: 100px;
-      cursor: pointer;
-      font-size: 24px;
-      color: white;
-      outline: none;
-      transition: background 0.3s;
-      margin: auto 0 20px;
-    }
-    #statusLabel {
-      text-align: center;
-      margin-bottom: 30px;
-      font-size: 24px;
-      color: green;
-      display: none;
-    }
-    #consoleLogs {
-      flex: 1;
-      padding: 15px;
-      background: #212529;
-      color: #cccccc;
-      font-family: monospace;
-      overflow-y: auto;
-      white-space: pre-line;
-      margin-bottom: 10px;
-    }
+    body { font-family: Arial; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f8f9fa; }
+    .container { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 30px rgba(0,0,0,0.15); width: 90%; max-width: 600px; height: 80%; display: flex; flex-direction: column; }
+    .mic-btn { background: #28a745; border: none; border-radius: 50%; width: 100px; height: 100px; cursor: pointer; font-size: 24px; color: white; transition: background 0.3s; margin: auto 0 20px; }
+    #statusLabel { text-align: center; margin-bottom: 30px; font-size: 24px; color: green; display: none; }
+    #consoleLogs { flex: 1; padding: 15px; background: #212529; color: #cccccc; font-family: monospace; overflow-y: auto; white-space: pre-line; }
   </style>
 </head>
 <body>
   <div class="container">
     <div id="statusLabel">on Air</div>
     <div id="consoleLogs"></div>
-    <button id="micButton" class="mic-btn" onclick="toggleConnection()">
-      <i class="fas fa-microphone"></i>
-    </button>
+    <button id="micButton" class="mic-btn" onclick="toggleConnection()"><i class="fas fa-microphone"></i></button>
     <audio id="openAIAudio" style="width: 100%; margin: 15px 0;" crossorigin="anonymous"></audio>
   </div>
 
-  <script src="https://kit.fontawesome.com/845924f09c.js" crossorigin="anonymous"></script>
+  <script src="https://kit.fontawesome.com/845924f09c.js"></script>
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
     Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
@@ -78,65 +31,27 @@
     let audioContext = null;
 
     function logMessage(message) {
-      const logsDiv = document.getElementById('consoleLogs');
-      logsDiv.textContent += `[${new Date().toISOString()}] ${message}\n`;
-      logsDiv.scrollTop = logsDiv.scrollHeight;
+      document.getElementById('consoleLogs').textContent += `[${new Date().toISOString()}] ${message}\n`;
     }
 
     async function initializeWebRTC(iceServers) {
-      const configuration = {
+      const config = {
         iceServers: iceServers || [
-          {
-            urls: "stun:stun.relay.metered.ca:80",
-          },
-          {
-            urls: "turn:global.relay.metered.ca:80",
-            username: "dabe0db86808a99aa36c7309",
-            credential: "n7sdOC9KUqBloUJ4",
-          },
-          {
-            urls: "turn:global.relay.metered.ca:80?transport=tcp",
-            username: "dabe0db86808a99aa36c7309",
-            credential: "n7sdOC9KUqBloUJ4",
-          },
-          {
-            urls: "turn:global.relay.metered.ca:443",
-            username: "dabe0db86808a99aa36c7309",
-            credential: "n7sdOC9KUqBloUJ4",
-          },
-          {
-            urls: "turns:global.relay.metered.ca:443?transport=tcp",
-            username: "dabe0db86808a99aa36c7309",
-            credential: "n7sdOC9KUqBloUJ4",
-          }
+          { urls: "stun:stun.relay.metered.ca:80" },
+          { urls: "turn:global.relay.metered.ca:80", username: "dabe0db86808a99aa36c7309", credential: "n7sdOC9KUqBloUJ4" },
+          { urls: "turn:global.relay.metered.ca:80?transport=tcp", username: "dabe0db86808a99aa36c7309", credential: "n7sdOC9KUqBloUJ4" },
+          { urls: "turn:global.relay.metered.ca:443", username: "dabe0db86808a99aa36c7309", credential: "n7sdOC9KUqBloUJ4" },
+          { urls: "turns:global.relay.metered.ca:443?transport=tcp", username: "dabe0db86808a99aa36c7309", credential: "n7sdOC9KUqBloUJ4" }
         ],
-        iceTransportPolicy: "relay",
-        rtcpMuxPolicy: "require"
+        iceTransportPolicy: "relay"
       };
 
-      peerConnection = new RTCPeerConnection(configuration);
-      const audioEl = document.getElementById('openAIAudio');
-
-      peerConnection.ontrack = (event) => {
-        if (audioEl && event.streams[0]) {
-          audioEl.srcObject = event.streams[0];
-          logMessage("OpenAI Audio-Stream aktiv");
-        }
-      };
-
-      dc = peerConnection.createDataChannel("oaiControlEvents");
-      dc.onopen = startAudioProcessing;
-      dc.onmessage = (e) => {
-        try {
-          const event = JSON.parse(e.data);
-          logMessage(`OpenAI Event: ${JSON.stringify(event)}`);
-          if (event.type === "error") {
-            logMessage("OpenAI-Fehler: " + event.error.message, "error");
-          }
-        } catch (error) {
-          logMessage("Fehler beim Parsen von OpenAI Events");
-        }
-      };
+      peerConnection = new RTCPeerConnection(config);
+      peerConnection.ontrack = e => document.getElementById('openAIAudio').srcObject = e.streams[0];
+      
+      dc = peerConnection.createDataChannel("control");
+      dc.onopen = () => logMessage("Datenkanal geöffnet");
+      dc.onmessage = e => logMessage(`OpenAI: ${e.data}`);
 
       return peerConnection;
     }
@@ -144,106 +59,45 @@
     async function startConnection() {
       try {
         userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        userStream.getAudioTracks().forEach(track => track.applyConstraints({ echoCancellation: true }));
-
-        const response = await Parse.Cloud.run("createEphemeralSession", {
-          model: "gpt-4o-realtime-preview",
-          voice: "verse"
-        });
-
-        const parseSessionId = response.id || response.sessionId;
-
+        const response = await Parse.Cloud.run("createEphemeralSession", { model: "gpt-4o-realtime-preview", voice: "verse" });
+        
         peerConnection = await initializeWebRTC(response.iceServers);
-        userStream.getAudioTracks().forEach(track => peerConnection.addTrack(track));
-
-        const offer = await peerConnection.createOffer({ offerToReceiveAudio: true });
+        userStream.getTracks().forEach(track => peerConnection.addTrack(track));
+        
+        const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
-
-        await Parse.Cloud.run("sendSignalingData", {
-          sessionId: parseSessionId,
-          data: { type: "offer", sdp: offer.sdp }
-        });
-
-        const answerResponse = await Parse.Cloud.run("forwardToOpenAI", {
+        
+        await Parse.Cloud.run("sendSignalingData", { sessionId: response.sessionId, data: { type: "offer", sdp: offer.sdp } });
+        const answer = await Parse.Cloud.run("forwardToOpenAI", { 
           openaiSessionId: response.openaiSessionId,
           clientSecret: response.clientSecret,
-          sdp: offer.sdp
+          sdp: offer.sdp 
         });
 
-        if (!answerResponse.ok) {
-          throw new Error("Fehler bei OpenAI-SDP-Verarbeitung");
-        }
-
-        const answerData = answerResponse;
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answerData.sdp));
-
-        const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId: parseSessionId });
-        signalingData.forEach(data => {
-          if (data.type === "candidate") {
-            const candidate = data.candidate.replace(/network-id \d+|tcptype \w+/g, '');
-            peerConnection.addIceCandidate(new RTCIceCandidate({ ...data, candidate }));
-          }
-        });
-
-        updateUIConnectionState(peerConnection.connectionState);
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer.sdp));
+        logMessage("Verbindung erfolgreich");
+        updateUIConnectionState('connected');
       } catch (error) {
-        logMessage(`Verbindungsfehler: ${error.message}`);
+        logMessage(`Fehler: ${error.message}`);
       }
-    }
-
-    async function startAudioProcessing() {
-      audioContext = new AudioContext();
-      await audioContext.audioWorklet.addModule('https://pacman904.github.io/voicebot-frontend/vad-processor.js');
-
-      const processor = new AudioWorkletNode(audioContext, 'vad-processor', { numberOfInputs: 1 });
-      processor.port.onmessage = (event) => {
-        if (event.data.type === "speech_started") {
-          dc.send(JSON.stringify({
-            type: "input_audio_stream.start",
-            audio: Array.from(event.inputBuffer[0].getChannelData(0)).map(s => Math.min(Math.max(s * 32767, -32768), 32767)),
-            timestamp: performance.now()
-          }));
-        } else if (event.data.type === "speech_stopped") {
-          dc.send(JSON.stringify({ type: "input_audio_stream.stop", timestamp: performance.now() }));
-        }
-      };
-
-      userStream.getAudioTracks().forEach(track => {
-        const source = audioContext.createMediaStreamTrackSource(track);
-        source.connect(processor);
-      });
     }
 
     async function toggleConnection() {
-      if (peerConnection?.connectionState === 'connected') {
-        await stopConnection();
-      } else {
-        await startConnection();
-      }
+      if (peerConnection?.connectionState === 'connected') await stopConnection();
+      else await startConnection();
     }
 
     async function stopConnection() {
-      if (peerConnection) {
-        peerConnection.close();
-        peerConnection = null;
-      }
-      if (userStream) {
-        userStream.getTracks().forEach(track => track.stop());
-        userStream = null;
-      }
-      if (audioContext) {
-        audioContext.close();
-        audioContext = null;
-      }
-      logMessage("Verbindung beendet");
+      if (peerConnection) peerConnection.close();
+      if (userStream) userStream.getTracks().forEach(track => track.stop());
+      if (audioContext) audioContext.close();
       updateUIConnectionState('disconnected');
+      logMessage("Verbindung getrennt");
     }
 
     function updateUIConnectionState(state) {
-      const micBtn = document.getElementById('micButton');
-      micBtn.style.backgroundColor = state === 'connected' ? '#dc3545' : '#28a745';
-      const statusLabel = document.getElementById('statusLabel');
-      statusLabel.style.display = state === 'connected' ? 'block' : 'none';
+      document.getElementById('micButton').style.backgroundColor = state === 'connected' ? '#dc3545' : '#28a745';
+      document.getElementById('statusLabel').style.display = state === 'connected' ? 'block' : 'none';
     }
   </script>
 </body>
