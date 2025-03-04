@@ -1,10 +1,11 @@
+<!-- Index.html -->
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8">
-  <title>VoiceBot</title>
+  <title>Voice Assistant</title>
   <style>
-    body {
+    body { 
       font-family: Arial;
       display: flex;
       justify-content: center;
@@ -16,12 +17,12 @@
     .container {
       background: white;
       padding: 2rem;
-      border-radius: 12px;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      border-radius: 1rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
       width: 90%;
       max-width: 600px;
     }
-    .mic-btn {
+    #micButton {
       background: #10B981;
       width: 80px;
       height: 80px;
@@ -29,21 +30,20 @@
       border: none;
       cursor: pointer;
       color: white;
-      font-size: 1.5rem;
-      margin: 20px auto;
       display: block;
+      margin: 1rem auto;
     }
-    #statusLabel {
-      text-align: center;
+    #status {
       color: #059669;
+      text-align: center;
       margin: 1rem 0;
       display: none;
     }
-    #consoleLogs {
+    #logs {
       background: #1F2937;
-      color: #E5E7EB;
+      color: white;
       padding: 1rem;
-      border-radius: 8px;
+      border-radius: 0.5rem;
       font-family: monospace;
       height: 200px;
       overflow-y: auto;
@@ -52,83 +52,67 @@
 </head>
 <body>
   <div class="container">
-    <div id="statusLabel">ON AIR</div>
-    <div id="consoleLogs"></div>
-    <button id="micButton" class="mic-btn" onclick="toggleConnection()">
+    <div id="status">● LIVE</div>
+    <div id="logs"></div>
+    <button id="micButton" onclick="toggle()">
       <i class="fas fa-microphone"></i>
     </button>
-    <audio id="openAIAudio" controls style="width: 100%"></audio>
+    <audio id="audioOutput" controls style="width: 100%"></audio>
   </div>
 
   <script src="https://kit.fontawesome.com/845924f09c.js"></script>
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
-    // Parse Initialisierung
     Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
     Parse.serverURL = "https://parseapi.back4app.com/";
 
-    let peerConnection = null;
-    let mediaStream = null;
+    let pc = null;
+    let stream = null;
 
-    // Logger
-    function log(message) {
-      document.getElementById('consoleLogs').textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`;
-    }
-
-    // WebRTC Initialisierung
-    async function initWebRTC(iceServers) {
-      return new RTCPeerConnection({
-        iceServers: iceServers,
-        iceTransportPolicy: "relay"
-      });
-    }
-
-    // Hauptfunktion
-    async function startConnection() {
+    async function init() {
       try {
-        // 1. Medienzugriff
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        
-        // 2. Session erstellen
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const session = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-realtime-preview",
           voice: "verse"
         });
 
-        // 3. PeerConnection
-        peerConnection = await initWebRTC(session.iceServers);
-        mediaStream.getTracks().forEach(track => peerConnection.addTrack(track));
-        
-        // 4. Offer erstellen
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
+        pc = new RTCPeerConnection({
+          iceServers: session.iceServers,
+          iceTransportPolicy: "relay"
+        });
 
-        // 5. Antwort von OpenAI holen
+        stream.getTracks().forEach(track => pc.addTrack(track));
+        pc.ontrack = e => document.getElementById('audioOutput').srcObject = e.streams[0];
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
         const answer = await Parse.Cloud.run("forwardToOpenAI", {
-          openaiSessionId: session.openaiSessionId,
+          sessionId: session.sessionId,
           sdp: offer.sdp
         });
 
-        // 6. Antwort verarbeiten
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-        
-        document.getElementById('statusLabel').style.display = 'block';
-        log("Verbindung erfolgreich hergestellt");
-
+        await pc.setRemoteDescription(answer);
+        document.getElementById('status').style.display = 'block';
+        log('Verbunden mit OpenAI');
       } catch (error) {
-        log(`FEHLER: ${error.message}`);
+        log(`Fehler: ${error.message}`);
       }
     }
 
-    // UI Handler
-    async function toggleConnection() {
-      if (peerConnection?.connectionState === 'connected') {
-        peerConnection.close();
-        mediaStream.getTracks().forEach(track => track.stop());
-        document.getElementById('statusLabel').style.display = 'none';
-        log("Verbindung getrennt");
+    function log(message) {
+      document.getElementById('logs').textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`;
+    }
+
+    async function toggle() {
+      if (pc?.connectionState === 'connected') {
+        pc.close();
+        stream.getTracks().forEach(track => track.stop());
+        document.getElementById('status').style.display = 'none';
+        log('Verbindung getrennt');
       } else {
-        await startConnection();
+        await init();
       }
     }
   </script>
