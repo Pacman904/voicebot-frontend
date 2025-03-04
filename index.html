@@ -86,7 +86,8 @@
     async function initializeWebRTC(iceServers) {
       const configuration = {
         iceServers: iceServers || [
-          { urls: "stun:stun.relay.metered.ca:80" },
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:global.stun.vserville.com" },
           { 
             urls: "turn:numb.viagenie.ca", 
             username: "webrtc@live.com", 
@@ -140,11 +141,10 @@
         const offer = await peerConnection.createOffer({ offerToReceiveAudio: true });
         await peerConnection.setLocalDescription(offer);
 
-        //珊瑚修正：Signaling-Daten als Promise korrekt verarbeiten
         await Parse.Cloud.run("sendSignalingData", {
           sessionId: response.sessionId,
           data: { type: "offer", sdp: offer.sdp }
-        }, { success: () => {}, error: (err) => logMessage(`Signaling-Fehler: ${err.message}`) });
+        });
 
         const answerResponse = await fetch(`https://api.openai.com/v1/realtime/sessions/${response.openaiSessionId}/offer`, {
           method: "POST",
