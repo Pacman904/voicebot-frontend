@@ -28,7 +28,6 @@
     let peerConnection = null;
     let userStream = null;
     let dc = null;
-    let audioContext = null;
 
     function logMessage(message) {
       document.getElementById('consoleLogs').textContent += `[${new Date().toISOString()}] ${message}\n`;
@@ -50,7 +49,6 @@
       peerConnection.ontrack = e => document.getElementById('openAIAudio').srcObject = e.streams[0];
       
       dc = peerConnection.createDataChannel("control");
-      dc.onopen = () => logMessage("Datenkanal geöffnet");
       dc.onmessage = e => logMessage(`OpenAI: ${e.data}`);
 
       return peerConnection;
@@ -59,7 +57,10 @@
     async function startConnection() {
       try {
         userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const response = await Parse.Cloud.run("createEphemeralSession", { model: "gpt-4o-realtime-preview", voice: "verse" });
+        const response = await Parse.Cloud.run("createEphemeralSession", { 
+          model: "gpt-4o-realtime-preview", 
+          voice: "verse" 
+        });
         
         peerConnection = await initializeWebRTC(response.iceServers);
         userStream.getTracks().forEach(track => peerConnection.addTrack(track));
@@ -67,8 +68,8 @@
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
         
-        await Parse.Cloud.run("sendSignalingData", { sessionId: response.sessionId, data: { type: "offer", sdp: offer.sdp } });
-        const answer = await Parse.Cloud.run("forwardToOpenAI", { 
+        // ✅ Korrekte SDP-Übertragung
+        const answer = await Parse.Cloud.run("forwardToOpenAI", {
           openaiSessionId: response.openaiSessionId,
           clientSecret: response.clientSecret,
           sdp: offer.sdp 
@@ -76,28 +77,23 @@
 
         await peerConnection.setRemoteDescription(new RTCSessionDescription(answer.sdp));
         logMessage("Verbindung erfolgreich");
-        updateUIConnectionState('connected');
+        document.getElementById('micButton').style.backgroundColor = '#dc3545';
+        document.getElementById('statusLabel').style.display = 'block';
       } catch (error) {
         logMessage(`Fehler: ${error.message}`);
       }
     }
 
     async function toggleConnection() {
-      if (peerConnection?.connectionState === 'connected') await stopConnection();
-      else await startConnection();
-    }
-
-    async function stopConnection() {
-      if (peerConnection) peerConnection.close();
-      if (userStream) userStream.getTracks().forEach(track => track.stop());
-      if (audioContext) audioContext.close();
-      updateUIConnectionState('disconnected');
-      logMessage("Verbindung getrennt");
-    }
-
-    function updateUIConnectionState(state) {
-      document.getElementById('micButton').style.backgroundColor = state === 'connected' ? '#dc3545' : '#28a745';
-      document.getElementById('statusLabel').style.display = state === 'connected' ? 'block' : 'none';
+      if (peerConnection?.connectionState === 'connected') {
+        peerConnection.close();
+        userStream.getTracks().forEach(track => track.stop());
+        document.getElementById('micButton').style.backgroundColor = '#28a745';
+        document.getElementById('statusLabel').style.display = 'none';
+        logMessage("Verbindung getrennt");
+      } else {
+        await startConnection();
+      }
     }
   </script>
 </body>
