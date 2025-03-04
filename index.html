@@ -18,8 +18,11 @@
       padding: 30px;
       border-radius: 15px;
       box-shadow: 0 4px 30px rgba(0,0,0,0.15);
-      width: 90%; max-width: 600px;
-      height: 80%; display: flex; flex-direction: column;
+      width: 90%;
+      max-width: 600px;
+      height: 80%;
+      display: flex;
+      flex-direction: column;
     }
     .mic-btn {
       background: #28a745;
@@ -135,14 +138,18 @@
           voice: "verse"
         });
 
+        //珊瑚修正：Zugriff auf Parse-Session-ID
+        const parseSessionId = response.id || response.sessionId;
+
         peerConnection = await initializeWebRTC(response.iceServers);
         userStream.getAudioTracks().forEach(track => peerConnection.addTrack(track));
 
         const offer = await peerConnection.createOffer({ offerToReceiveAudio: true });
         await peerConnection.setLocalDescription(offer);
 
+        //珊瑚修正：Erzwingen von sessionId und data-Parametern
         await Parse.Cloud.run("sendSignalingData", {
-          sessionId: response.sessionId,
+          sessionId: parseSessionId,
           data: { type: "offer", sdp: offer.sdp }
         });
 
@@ -162,7 +169,7 @@
         const answerData = await answerResponse.json();
         await peerConnection.setRemoteDescription(new RTCSessionDescription(answerData.sdp));
 
-        const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId: response.sessionId });
+        const signalingData = await Parse.Cloud.run("getSignalingData", { sessionId: parseSessionId });
         signalingData.forEach(data => {
           if (data.type === "candidate") {
             const candidate = data.candidate.replace(/network-id \d+|tcptype \w+/g, '');
