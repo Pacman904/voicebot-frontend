@@ -1,8 +1,9 @@
+<!-- Index.html -->
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Realtime Voice Assistant</title>
+  <title>Voice Assistant</title>
   <style>
     body { font-family: Arial; margin: 0; padding: 20px; background: #f0f2f5; }
     .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
@@ -29,7 +30,6 @@
 
     let peerConnection = null;
     let mediaStream = null;
-    const modelName = "gpt-4o-realtime-preview";
 
     function log(message) {
       document.getElementById('logs').textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`;
@@ -37,16 +37,13 @@
 
     async function initConnection() {
       try {
-        // 1. Ephemeral Session erstellen
         const session = await Parse.Cloud.run("createEphemeralSession");
         
-        // 2. WebRTC initialisieren
         peerConnection = new RTCPeerConnection({
           iceServers: session.iceServers,
           iceTransportPolicy: "relay"
         });
 
-        // 3. Audio-Stream verarbeiten
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaStream.getTracks().forEach(track => peerConnection.addTrack(track));
         
@@ -54,30 +51,15 @@
           document.getElementById('audioOutput').srcObject = event.streams[0];
         };
 
-        // 4. Offer erstellen
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
 
-        // 5. SDP an OpenAI senden (KORREKTER ENDPUNKT)
-        const sdpResponse = await fetch(
-          `https://api.openai.com/v1/realtime?model=${modelName}`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${session.clientSecret}`,
-              "Content-Type": "application/sdp"
-            },
-            body: offer.sdp
-          }
-        );
+        const answer = await Parse.Cloud.run("forwardToOpenAI", {
+          clientSecret: session.clientSecret,
+          sdp: offer.sdp
+        });
 
-        // 6. Antwort verarbeiten
-        const answer = {
-          type: "answer",
-          sdp: await sdpResponse.text()
-        };
-        await peerConnection.setRemoteDescription(answer);
-        
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
         document.getElementById('status').style.display = 'block';
         log("Verbindung erfolgreich!");
 
