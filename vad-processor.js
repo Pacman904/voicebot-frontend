@@ -9,13 +9,18 @@ class VADProcessor extends AudioWorkletProcessor {
     this.buffer = new Float32Array(512);
     this.index = 0;
     this.threshold = 0.1; // Fallback-Wert
+    
+    // Initialisiere Parameter sicher
+    this.port.onmessage = (e) => {
+      if (e.data.threshold) this.threshold = e.data.threshold;
+    };
   }
 
   process(inputs) {
     const input = inputs[0]?.[0];
     if (!input) return true;
 
-    // Buffer füllen
+    // Sicherer Buffer-Zugriff
     for (let i = 0; i < input.length; i++) {
       this.buffer[this.index] = input[i];
       this.index = (this.index + 1) % 512;
@@ -25,16 +30,15 @@ class VADProcessor extends AudioWorkletProcessor {
   }
 
   analyze() {
-    // Parameter sicher auslesen
-    const thresholdParam = this.parameters.get('threshold');
-    this.threshold = thresholdParam?.length > 0 ? thresholdParam[0] : 0.1;
-
+    // Parameter mit Fallback
+    const threshold = this.parameters?.get('threshold')?.[0] || this.threshold;
+    
     const energy = this.buffer.reduce((sum, val) => sum + val ** 2, 0) / 512;
     
-    if (energy > this.threshold && !this.speaking) {
+    if (energy > threshold && !this.speaking) {
       this.speaking = true;
       this.port.postMessage({ type: "speech_started" });
-    } else if (energy < this.threshold * 0.5 && this.speaking) {
+    } else if (energy < threshold * 0.5 && this.speaking) {
       this.speaking = false;
       this.port.postMessage({ type: "speech_stopped" });
     }
