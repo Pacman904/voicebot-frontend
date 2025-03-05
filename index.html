@@ -75,7 +75,14 @@
           sdp: offer.sdp
         });
 
-        await peerConnection.setRemoteDescription(answer);
+        // Critical fix: Create proper RTCSessionDescription
+        await peerConnection.setRemoteDescription(
+          new RTCSessionDescription({
+            type: 'answer',
+            sdp: answer.sdp
+          })
+        );
+        
         document.getElementById('status').style.display = 'block';
         log("Erfolgreich verbunden!");
 
