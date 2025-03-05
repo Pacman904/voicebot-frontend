@@ -29,7 +29,6 @@
 
     let peerConnection = null;
     let mediaStream = null;
-    let dataChannel = null;
     let audioContext = null;
 
     function log(message) {
@@ -38,52 +37,36 @@
 
     async function initConnection() {
       try {
-        // 1. Session erstellen
         const session = await Parse.Cloud.run("createEphemeralSession");
         
-        // 2. WebRTC initialisieren
         peerConnection = new RTCPeerConnection({
           iceServers: session.iceServers,
           iceTransportPolicy: "relay"
         });
 
-        // 3. Data Channel für Events
-        dataChannel = peerConnection.createDataChannel("oai-events");
-        dataChannel.onmessage = (e) => {
-          const event = JSON.parse(e.data);
-          if (event.type === "response.audio") {
-            log("Antwort erhalten!");
-          }
-        };
-
-        // 4. Mikrofonzugriff
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaStream.getTracks().forEach(track => peerConnection.addTrack(track));
         
-        // 5. Audio verarbeiten
+        peerConnection.ontrack = event => {
+          document.getElementById('audioOutput').srcObject = event.streams[0];
+        };
+
+        // ✅ Korrigierte Audio-Verarbeitung
         audioContext = new AudioContext();
-        await audioContext.audioWorklet.addModule('https://pacman904.github.io/voicebot-frontend/vad-processor.js');
+        await audioContext.audioWorklet.addModule('vad-processor.js');
         const vadProcessor = new AudioWorkletNode(audioContext, 'vad-processor');
         
         vadProcessor.port.onmessage = (e) => {
-          if (e.data.type === "speech_started") {
-            dataChannel.send(JSON.stringify({ type: "input.start" }));
-            log("Spracherkennung gestartet");
-          }
-          if (e.data.type === "speech_stopped") {
-            dataChannel.send(JSON.stringify({ type: "input.stop" }));
-            log("Spracherkennung beendet");
-          }
+          if (e.data.type === "speech_started") log("Sprache erkannt");
+          if (e.data.type === "speech_stopped") log("Sprache beendet");
         };
 
         const source = audioContext.createMediaStreamSource(mediaStream);
         source.connect(vadProcessor);
 
-        // 6. Offer erstellen
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
 
-        // 7. SDP an OpenAI senden
         const answer = await Parse.Cloud.run("forwardToOpenAI", {
           clientSecret: session.clientSecret,
           sdp: offer.sdp
