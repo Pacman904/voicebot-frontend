@@ -1,25 +1,24 @@
-<!-- Index.html -->
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Voice Assistant</title>
+  <title>Realtime Voice Assistant</title>
   <style>
-    body { font-family: Arial; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f0f2f5; }
-    .container { background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); width: 90%; max-width: 600px; }
-    #micButton { background: #10B981; width: 80px; height: 80px; border-radius: 50%; border: none; cursor: pointer; color: white; margin: 1rem auto; display: block; }
-    #status { color: #059669; text-align: center; margin: 1rem 0; display: none; }
-    #logs { background: #1F2937; color: white; padding: 1rem; border-radius: 0.5rem; font-family: monospace; height: 200px; overflow-y: auto; }
+    body { font-family: Arial; margin: 0; padding: 20px; background: #f0f2f5; }
+    .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    #micButton { background: #10B981; width: 80px; height: 80px; border-radius: 50%; border: none; cursor: pointer; display: block; margin: 20px auto; }
+    #status { color: #059669; text-align: center; display: none; }
+    #logs { background: #1f2937; color: white; padding: 15px; border-radius: 8px; font-family: monospace; height: 200px; overflow-y: auto; }
   </style>
 </head>
 <body>
   <div class="container">
     <div id="status">● LIVE</div>
     <div id="logs"></div>
-    <button id="micButton" onclick="toggle()">
-      <i class="fas fa-microphone"></i>
+    <button id="micButton" onclick="toggleConnection()">
+      <i class="fas fa-microphone" style="font-size: 24px;"></i>
     </button>
-    <audio id="audioOutput" controls style="width: 100%"></audio>
+    <audio id="audioOutput" controls style="width: 100%; margin-top: 20px;"></audio>
   </div>
 
   <script src="https://kit.fontawesome.com/845924f09c.js"></script>
@@ -28,67 +27,73 @@
     Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
     Parse.serverURL = "https://parseapi.back4app.com/";
 
-    let pc = null;
-    let stream = null;
+    let peerConnection = null;
+    let mediaStream = null;
+    const modelName = "gpt-4o-realtime-preview";
 
-    async function init() {
+    function log(message) {
+      document.getElementById('logs').textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`;
+    }
+
+    async function initConnection() {
       try {
-        // 1. Mikrofonzugriff
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // 1. Ephemeral Session erstellen
+        const session = await Parse.Cloud.run("createEphemeralSession");
         
-        // 2. Session erstellen
-        const session = await Parse.Cloud.run("createEphemeralSession", {
-          model: "gpt-4o-realtime-preview",
-          voice: "verse"
-        });
-
-        // 3. PeerConnection initialisieren
-        pc = new RTCPeerConnection({
+        // 2. WebRTC initialisieren
+        peerConnection = new RTCPeerConnection({
           iceServers: session.iceServers,
           iceTransportPolicy: "relay"
         });
 
-        // 4. Medienstream hinzufügen
-        stream.getTracks().forEach(track => pc.addTrack(track));
+        // 3. Audio-Stream verarbeiten
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStream.getTracks().forEach(track => peerConnection.addTrack(track));
         
-        // 5. Audiostream verarbeiten
-        pc.ontrack = event => {
+        peerConnection.ontrack = event => {
           document.getElementById('audioOutput').srcObject = event.streams[0];
         };
 
-        // 6. Offer erstellen
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
+        // 4. Offer erstellen
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
 
-        // 7. Antwort von OpenAI holen
-        const answer = await Parse.Cloud.run("forwardToOpenAI", {
-          sessionId: session.sessionId,
-          sdp: offer.sdp
-        });
+        // 5. SDP an OpenAI senden (KORREKTER ENDPUNKT)
+        const sdpResponse = await fetch(
+          `https://api.openai.com/v1/realtime?model=${modelName}`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${session.clientSecret}`,
+              "Content-Type": "application/sdp"
+            },
+            body: offer.sdp
+          }
+        );
 
-        // 8. Antwort verarbeiten
-        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        // 6. Antwort verarbeiten
+        const answer = {
+          type: "answer",
+          sdp: await sdpResponse.text()
+        };
+        await peerConnection.setRemoteDescription(answer);
         
         document.getElementById('status').style.display = 'block';
-        log('Verbindung erfolgreich!');
+        log("Verbindung erfolgreich!");
 
       } catch (error) {
         log(`Fehler: ${error.message}`);
       }
     }
 
-    function log(message) {
-      document.getElementById('logs').textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`;
-    }
-
-    async function toggle() {
-      if (pc?.connectionState === 'connected') {
-        pc.close();
-        stream.getTracks().forEach(track => track.stop());
+    async function toggleConnection() {
+      if (peerConnection?.connectionState === 'connected') {
+        peerConnection.close();
+        mediaStream.getTracks().forEach(track => track.stop());
         document.getElementById('status').style.display = 'none';
-        log('Verbindung getrennt');
+        log("Verbindung getrennt");
       } else {
-        await init();
+        await initConnection();
       }
     }
   </script>
