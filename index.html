@@ -1,4 +1,3 @@
-<!-- Index.html -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -30,39 +29,61 @@
 
     let peerConnection = null;
     let mediaStream = null;
+    let dataChannel = null;
+    let audioContext = null;
 
     function log(message) {
-      const logs = document.getElementById('logs');
-      logs.textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`;
-      logs.scrollTop = logs.scrollHeight;
+      document.getElementById('logs').textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`;
     }
 
     async function initConnection() {
       try {
-        log("Starting connection...");
+        // 1. Session erstellen
         const session = await Parse.Cloud.run("createEphemeralSession");
-        log("Session created");
-
-        // ✅ ICE-Server Validierung
-        const iceServers = Array.isArray(session.iceServers) ? session.iceServers : [];
         
+        // 2. WebRTC initialisieren
         peerConnection = new RTCPeerConnection({
-          iceServers: iceServers,
+          iceServers: session.iceServers,
           iceTransportPolicy: "relay"
         });
 
+        // 3. Data Channel für Events
+        dataChannel = peerConnection.createDataChannel("oai-events");
+        dataChannel.onmessage = (e) => {
+          const event = JSON.parse(e.data);
+          if (event.type === "response.audio") {
+            log("Antwort erhalten!");
+          }
+        };
+
+        // 4. Mikrofonzugriff
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaStream.getTracks().forEach(track => peerConnection.addTrack(track));
         
-        peerConnection.ontrack = event => {
-          document.getElementById('audioOutput').srcObject = event.streams[0];
-          log("Audio stream received");
+        // 5. Audio verarbeiten
+        audioContext = new AudioContext();
+        await audioContext.audioWorklet.addModule('https://pacman904.github.io/voicebot-frontend/vad-processor.js');
+        const vadProcessor = new AudioWorkletNode(audioContext, 'vad-processor');
+        
+        vadProcessor.port.onmessage = (e) => {
+          if (e.data.type === "speech_started") {
+            dataChannel.send(JSON.stringify({ type: "input.start" }));
+            log("Spracherkennung gestartet");
+          }
+          if (e.data.type === "speech_stopped") {
+            dataChannel.send(JSON.stringify({ type: "input.stop" }));
+            log("Spracherkennung beendet");
+          }
         };
 
+        const source = audioContext.createMediaStreamSource(mediaStream);
+        source.connect(vadProcessor);
+
+        // 6. Offer erstellen
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
-        log("Offer created");
 
+        // 7. SDP an OpenAI senden
         const answer = await Parse.Cloud.run("forwardToOpenAI", {
           clientSecret: session.clientSecret,
           sdp: offer.sdp
@@ -70,11 +91,10 @@
 
         await peerConnection.setRemoteDescription(answer);
         document.getElementById('status').style.display = 'block';
-        log("Connection successful!");
+        log("Verbindung erfolgreich!");
 
       } catch (error) {
-        log(`ERROR: ${error.message}`);
-        console.error(error);
+        log(`Fehler: ${error.message}`);
       }
     }
 
@@ -82,8 +102,9 @@
       if (peerConnection?.connectionState === 'connected') {
         peerConnection.close();
         mediaStream.getTracks().forEach(track => track.stop());
+        audioContext?.close();
         document.getElementById('status').style.display = 'none';
-        log("Connection closed");
+        log("Verbindung getrennt");
       } else {
         await initConnection();
       }
