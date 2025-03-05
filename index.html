@@ -40,48 +40,41 @@
     async function initConnection() {
       try {
         log("Starting connection...");
-        
         const session = await Parse.Cloud.run("createEphemeralSession");
-        log("Session created:", JSON.stringify(session));
+        log("Session created");
 
+        // ✅ ICE-Server Validierung
+        const iceServers = Array.isArray(session.iceServers) ? session.iceServers : [];
+        
         peerConnection = new RTCPeerConnection({
-          iceServers: session.iceServers,
+          iceServers: iceServers,
           iceTransportPolicy: "relay"
         });
 
-        // Add ICE candidate logging
-        peerConnection.onicecandidate = e => {
-          if (e.candidate) log("New ICE candidate:", e.candidate.candidate);
-        };
-
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaStream.getTracks().forEach(track => {
-          peerConnection.addTrack(track);
-          log("Added audio track:", track.id);
-        });
-
+        mediaStream.getTracks().forEach(track => peerConnection.addTrack(track));
+        
         peerConnection.ontrack = event => {
-          log("Received audio stream");
           document.getElementById('audioOutput').srcObject = event.streams[0];
+          log("Audio stream received");
         };
 
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
-        log("Created offer:", offer.sdp.substring(0, 100) + "...");
+        log("Offer created");
 
         const answer = await Parse.Cloud.run("forwardToOpenAI", {
           clientSecret: session.clientSecret,
           sdp: offer.sdp
         });
-        log("Received answer:", answer.sdp.substring(0, 100) + "...");
 
         await peerConnection.setRemoteDescription(answer);
         document.getElementById('status').style.display = 'block';
-        log("Connection established!");
+        log("Connection successful!");
 
       } catch (error) {
         log(`ERROR: ${error.message}`);
-        console.error("Frontend Error:", error);
+        console.error(error);
       }
     }
 
