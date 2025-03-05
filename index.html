@@ -5,49 +5,11 @@
   <meta charset="UTF-8">
   <title>Voice Assistant</title>
   <style>
-    body { 
-      font-family: Arial;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      margin: 0;
-      background: #f0f2f5;
-    }
-    .container {
-      background: white;
-      padding: 2rem;
-      border-radius: 1rem;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      width: 90%;
-      max-width: 600px;
-    }
-    #micButton {
-      background: #10B981;
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
-      border: none;
-      cursor: pointer;
-      color: white;
-      display: block;
-      margin: 1rem auto;
-    }
-    #status {
-      color: #059669;
-      text-align: center;
-      margin: 1rem 0;
-      display: none;
-    }
-    #logs {
-      background: #1F2937;
-      color: white;
-      padding: 1rem;
-      border-radius: 0.5rem;
-      font-family: monospace;
-      height: 200px;
-      overflow-y: auto;
-    }
+    body { font-family: Arial; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f0f2f5; }
+    .container { background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); width: 90%; max-width: 600px; }
+    #micButton { background: #10B981; width: 80px; height: 80px; border-radius: 50%; border: none; cursor: pointer; color: white; margin: 1rem auto; display: block; }
+    #status { color: #059669; text-align: center; margin: 1rem 0; display: none; }
+    #logs { background: #1F2937; color: white; padding: 1rem; border-radius: 0.5rem; font-family: monospace; height: 200px; overflow-y: auto; }
   </style>
 </head>
 <body>
@@ -71,31 +33,45 @@
 
     async function init() {
       try {
+        // 1. Mikrofonzugriff
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        // 2. Session erstellen
         const session = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-realtime-preview",
           voice: "verse"
         });
 
+        // 3. PeerConnection initialisieren
         pc = new RTCPeerConnection({
           iceServers: session.iceServers,
           iceTransportPolicy: "relay"
         });
 
+        // 4. Medienstream hinzufügen
         stream.getTracks().forEach(track => pc.addTrack(track));
-        pc.ontrack = e => document.getElementById('audioOutput').srcObject = e.streams[0];
+        
+        // 5. Audiostream verarbeiten
+        pc.ontrack = event => {
+          document.getElementById('audioOutput').srcObject = event.streams[0];
+        };
 
+        // 6. Offer erstellen
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
+        // 7. Antwort von OpenAI holen
         const answer = await Parse.Cloud.run("forwardToOpenAI", {
           sessionId: session.sessionId,
           sdp: offer.sdp
         });
 
-        await pc.setRemoteDescription(answer);
+        // 8. Antwort verarbeiten
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        
         document.getElementById('status').style.display = 'block';
-        log('Verbunden mit OpenAI');
+        log('Verbindung erfolgreich!');
+
       } catch (error) {
         log(`Fehler: ${error.message}`);
       }
