@@ -18,7 +18,7 @@
     <button id="micButton" onclick="toggleConnection()">
       <i class="fas fa-microphone" style="font-size: 24px;"></i>
     </button>
-    <audio id="audioOutput" controls style="width: 100%; margin-top: 20px;"></audio>
+    <audio id="audioOutput" controls autoplay style="width: 100%; margin-top: 20px;"></audio>
   </div>
 
   <script src="https://kit.fontawesome.com/845924f09c.js"></script>
@@ -39,7 +39,7 @@
 
     async function initConnection() {
       try {
-        log("Initialisiere Verbindung...");
+        log("Initializing connection...");
         const session = await Parse.Cloud.run("createEphemeralSession");
         
         peerConnection = new RTCPeerConnection({
@@ -50,9 +50,19 @@
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaStream.getTracks().forEach(track => peerConnection.addTrack(track));
         
-        peerConnection.ontrack = event => {
-          document.getElementById('audioOutput').srcObject = event.streams[0];
-          log("OpenAI-Audio empfangen");
+        peerConnection.ontrack = async (event) => {
+          const audioElement = document.getElementById('audioOutput');
+          audioElement.srcObject = event.streams[0];
+          
+          try {
+            await audioElement.play();
+            log("Audio playback started");
+          } catch (err) {
+            log("Click the audio player to start playback");
+            audioElement.muted = true; // Workaround for autoplay restrictions
+            await audioElement.play();
+            audioElement.muted = false;
+          }
         };
 
         audioContext = new AudioContext();
@@ -60,8 +70,8 @@
         const vadProcessor = new AudioWorkletNode(audioContext, 'vad-processor');
         
         vadProcessor.port.onmessage = (e) => {
-          if (e.data.type === "speech_started") log("Sprache erkannt");
-          if (e.data.type === "speech_stopped") log("Sprache beendet");
+          if (e.data.type === "speech_started") log("Speech detected");
+          if (e.data.type === "speech_stopped") log("Speech ended");
         };
 
         const source = audioContext.createMediaStreamSource(mediaStream);
@@ -75,7 +85,6 @@
           sdp: offer.sdp
         });
 
-        // Critical fix: Create proper RTCSessionDescription
         await peerConnection.setRemoteDescription(
           new RTCSessionDescription({
             type: 'answer',
@@ -84,10 +93,10 @@
         );
         
         document.getElementById('status').style.display = 'block';
-        log("Erfolgreich verbunden!");
+        log("Connection successful!");
 
       } catch (error) {
-        log(`Fehler: ${error.message}`);
+        log(`Error: ${error.message}`);
       }
     }
 
@@ -95,9 +104,10 @@
       if (peerConnection?.connectionState === 'connected') {
         peerConnection.close();
         mediaStream.getTracks().forEach(track => track.stop());
-        audioContext?.close();
+        if (audioContext) await audioContext.close();
         document.getElementById('status').style.display = 'none';
-        log("Verbindung getrennt");
+        document.getElementById('audioOutput').srcObject = null;
+        log("Disconnected");
       } else {
         await initConnection();
       }
