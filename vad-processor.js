@@ -15,7 +15,6 @@ class VADProcessor extends AudioWorkletProcessor {
     const input = inputs[0][0];
     if (!input) return true;
 
-    // Buffer füllen
     for (let i = 0; i < input.length; i++) {
       this.buffer[this.index++] = input[i];
       if (this.index >= this.bufferSize) {
@@ -27,8 +26,9 @@ class VADProcessor extends AudioWorkletProcessor {
   }
 
   analyze() {
-    const energy = this.buffer.reduce((sum, val) => sum + val ** 2, 0) / this.bufferSize;
+    // ✅ Korrigierter Parameter-Zugriff
     const threshold = this.parameters.get('threshold')[0];
+    const energy = this.buffer.reduce((sum, val) => sum + val ** 2, 0) / this.bufferSize;
 
     if (energy > threshold && !this.speaking) {
       this.speaking = true;
