@@ -1,30 +1,42 @@
 class VADProcessor extends AudioWorkletProcessor {
-  static get parameterDefinitions() {
-    return { threshold: { type: "number", defaultValue: 0.1 } };
+  static get parameterDescriptors() {
+    return [{ name: 'threshold', defaultValue: 0.1 }];
   }
 
   constructor() {
     super();
     this.speaking = false;
-    this.chunkSize = 4096;
+    this.bufferSize = 512;
+    this.buffer = new Float32Array(this.bufferSize);
+    this.index = 0;
   }
 
-  process(inputs, outputs) {
-    const input = inputs[0];
-    const buffer = input[0];
-    const volume = Math.sqrt(buffer.reduce((sum, s) => sum + s ** 2, 0) / buffer.length);
+  process(inputs) {
+    const input = inputs[0][0];
+    if (!input) return true;
 
-    if (volume > this.threshold && !this.speaking) {
+    // Buffer füllen
+    for (let i = 0; i < input.length; i++) {
+      this.buffer[this.index++] = input[i];
+      if (this.index >= this.bufferSize) {
+        this.analyze();
+        this.index = 0;
+      }
+    }
+    return true;
+  }
+
+  analyze() {
+    const energy = this.buffer.reduce((sum, val) => sum + val ** 2, 0) / this.bufferSize;
+    const threshold = this.parameters.get('threshold')[0];
+
+    if (energy > threshold && !this.speaking) {
       this.speaking = true;
-      this.port.postMessage({
-        type: "speech_started",
-        audio: Float32Array.from(buffer).map(s => Math.min(Math.max(s * 32767, -32768), 32767))
-      });
-    } else if (volume < this.threshold * 0.5 && this.speaking) {
+      this.port.postMessage({ type: "speech_started" });
+    } else if (energy < threshold * 0.5 && this.speaking) {
       this.speaking = false;
       this.port.postMessage({ type: "speech_stopped" });
     }
-    return true;
   }
 }
 
