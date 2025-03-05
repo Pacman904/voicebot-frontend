@@ -33,40 +33,48 @@
 
     function log(message) {
       document.getElementById('logs').textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`;
+      document.getElementById('logs').scrollTop = document.getElementById('logs').scrollHeight;
     }
 
     async function initConnection() {
       try {
+        log("Verbindung wird aufgebaut...");
         const session = await Parse.Cloud.run("createEphemeralSession");
         
+        // WebRTC initialisieren
         peerConnection = new RTCPeerConnection({
           iceServers: session.iceServers,
           iceTransportPolicy: "relay"
         });
 
+        // Mikrofonzugriff
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaStream.getTracks().forEach(track => peerConnection.addTrack(track));
-        
+
+        // Audio-Stream empfangen
         peerConnection.ontrack = event => {
           document.getElementById('audioOutput').srcObject = event.streams[0];
+          log("OpenAI-Audiostream aktiv");
         };
 
-        // ✅ Korrigierte Audio-Verarbeitung
+        // Audio-Verarbeitung
         audioContext = new AudioContext();
-        await audioContext.audioWorklet.addModule('vad-processor.js');
+        await audioContext.audioWorklet.addModule('https://pacman904.github.io/voicebot-frontend/vad-processor.js');
         const vadProcessor = new AudioWorkletNode(audioContext, 'vad-processor');
         
         vadProcessor.port.onmessage = (e) => {
-          if (e.data.type === "speech_started") log("Sprache erkannt");
-          if (e.data.type === "speech_stopped") log("Sprache beendet");
+          if (e.data.type === "speech_started") log("Spracherkennung gestartet");
+          if (e.data.type === "speech_stopped") log("Spracherkennung beendet");
         };
 
         const source = audioContext.createMediaStreamSource(mediaStream);
         source.connect(vadProcessor);
 
+        // Offer erstellen
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
 
+        // Antwort von OpenAI holen
         const answer = await Parse.Cloud.run("forwardToOpenAI", {
           clientSecret: session.clientSecret,
           sdp: offer.sdp
@@ -74,7 +82,7 @@
 
         await peerConnection.setRemoteDescription(answer);
         document.getElementById('status').style.display = 'block';
-        log("Verbindung erfolgreich!");
+        log("Erfolgreich verbunden!");
 
       } catch (error) {
         log(`Fehler: ${error.message}`);
