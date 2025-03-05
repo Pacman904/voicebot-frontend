@@ -6,34 +6,35 @@ class VADProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.speaking = false;
-    this.bufferSize = 512;
-    this.buffer = new Float32Array(this.bufferSize);
+    this.buffer = new Float32Array(512);
     this.index = 0;
+    this.threshold = 0.1; // Fallback-Wert
   }
 
   process(inputs) {
-    const input = inputs[0][0];
+    const input = inputs[0]?.[0];
     if (!input) return true;
 
+    // Buffer füllen
     for (let i = 0; i < input.length; i++) {
-      this.buffer[this.index++] = input[i];
-      if (this.index >= this.bufferSize) {
-        this.analyze();
-        this.index = 0;
-      }
+      this.buffer[this.index] = input[i];
+      this.index = (this.index + 1) % 512;
+      if (this.index === 0) this.analyze();
     }
     return true;
   }
 
   analyze() {
-    // ✅ Korrigierter Parameter-Zugriff
-    const threshold = this.parameters.get('threshold')[0];
-    const energy = this.buffer.reduce((sum, val) => sum + val ** 2, 0) / this.bufferSize;
+    // Parameter sicher auslesen
+    const thresholdParam = this.parameters.get('threshold');
+    this.threshold = thresholdParam?.length > 0 ? thresholdParam[0] : 0.1;
 
-    if (energy > threshold && !this.speaking) {
+    const energy = this.buffer.reduce((sum, val) => sum + val ** 2, 0) / 512;
+    
+    if (energy > this.threshold && !this.speaking) {
       this.speaking = true;
       this.port.postMessage({ type: "speech_started" });
-    } else if (energy < threshold * 0.5 && this.speaking) {
+    } else if (energy < this.threshold * 0.5 && this.speaking) {
       this.speaking = false;
       this.port.postMessage({ type: "speech_stopped" });
     }
