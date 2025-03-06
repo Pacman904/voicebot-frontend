@@ -30,6 +30,7 @@
     let peerConnection = null;
     let mediaStream = null;
     let audioContext = null;
+    let dc = null;
 
     function log(message) {
       const logs = document.getElementById('logs');
@@ -41,44 +42,70 @@
       try {
         log("Initializing connection...");
         const session = await Parse.Cloud.run("createEphemeralSession");
-        
-        // WebRTC Configuration with proper codecs
+
         peerConnection = new RTCPeerConnection({
           iceServers: session.iceServers,
-          iceTransportPolicy: "relay",
-          sdpSemantics: "unified-plan"
+          iceTransportPolicy: "relay"
         });
 
-        // Add ICE candidate logging
+        // Logging für Verbindungsstatus
+        peerConnection.oniceconnectionstatechange = () => {
+          log(`ICE connection state: ${peerConnection.iceConnectionState}`);
+        };
+        peerConnection.onconnectionstatechange = () => {
+          log(`Connection state: ${peerConnection.connectionState}`);
+        };
         peerConnection.onicecandidate = (event) => {
           if (event.candidate) {
-            log(`ICE Candidate: ${event.candidate.candidate}`);
+            log(`New ICE candidate: ${event.candidate.candidate}`);
           }
         };
 
-        peerConnection.oniceconnectionstatechange = () => {
-          log(`ICE State: ${peerConnection.iceConnectionState}`);
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStream.getTracks().forEach(track => peerConnection.addTrack(track));
+
+        peerConnection.ontrack = async (event) => {
+          const audioElement = document.getElementById('audioOutput');
+          audioElement.srcObject = event.streams[0];
+          try {
+            await audioElement.play();
+            log("Audio playback started");
+          } catch (err) {
+            log("Click the audio player to start playback");
+            audioElement.muted = true;
+            await audioElement.play();
+            audioElement.muted = false;
+          }
         };
 
-        // Get user media with exact constraints
-        mediaStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            sampleSize: 16,
-            channelCount: 1,
-            sampleRate: 16000
-          }
-        });
+        // Datenkanal erstellen
+        dc = peerConnection.createDataChannel("oai-events");
+        dc.onopen = () => {
+          log("Data channel opened");
+          const responseCreate = {
+            type: "response.create",
+            response: {
+              modalities: ["text"],
+              instructions: "Say hello"
+            }
+          };
+          dc.send(JSON.stringify(responseCreate));
+        };
+        dc.onmessage = (event) => {
+          const message = JSON.parse(event.data);
+          log(`Received message: ${JSON.stringify(message)}`);
+        };
+        dc.onerror = (error) => {
+          log(`Data channel error: ${error}`);
+        };
+        dc.onclose = () => {
+          log("Data channel closed");
+        };
 
-        // Add audio track with proper settings
-        const audioTrack = mediaStream.getAudioTracks()[0];
-        peerConnection.addTrack(audioTrack, mediaStream);
-
-        // Audio context activation
         audioContext = new AudioContext();
-        await audioContext.resume();
         await audioContext.audioWorklet.addModule('vad-processor.js');
         const vadProcessor = new AudioWorkletNode(audioContext, 'vad-processor');
-        
+
         vadProcessor.port.onmessage = (e) => {
           if (e.data.type === "speech_started") log("Speech detected");
           if (e.data.type === "speech_stopped") log("Speech ended");
@@ -87,24 +114,14 @@
         const source = audioContext.createMediaStreamSource(mediaStream);
         source.connect(vadProcessor);
 
-        // Create offer with proper audio settings
-        const offer = await peerConnection.createOffer({
-          offerToReceiveAudio: false,
-          offerToReceiveVideo: false
-        });
-        
+        const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
 
-        // Verify SDP before sending
-        log(`Sending SDP Offer: ${offer.sdp.substring(0, 120)}...`);
-        
         const answer = await Parse.Cloud.run("forwardToOpenAI", {
           clientSecret: session.clientSecret,
           sdp: offer.sdp
         });
 
-        log(`Received SDP Answer: ${answer.sdp.substring(0, 120)}...`);
-        
         await peerConnection.setRemoteDescription(
           new RTCSessionDescription({
             type: 'answer',
@@ -112,35 +129,22 @@
           })
         );
 
-        // Audio output handling
-        peerConnection.ontrack = (event) => {
-          const audioElement = document.getElementById('audioOutput');
-          audioElement.srcObject = event.streams[0];
-          audioElement.play().catch(() => {
-            log("Click the audio player to start playback");
-          });
-        };
-
         document.getElementById('status').style.display = 'block';
-        log("Connection established successfully");
-
+        log("Connection successful!");
       } catch (error) {
-        log(`Critical Error: ${error.message}`);
+        log(`Error: ${error.message}`);
       }
     }
 
     async function toggleConnection() {
-      const micButton = document.getElementById('micButton');
       if (peerConnection?.connectionState === 'connected') {
         peerConnection.close();
         mediaStream.getTracks().forEach(track => track.stop());
         if (audioContext) await audioContext.close();
         document.getElementById('status').style.display = 'none';
         document.getElementById('audioOutput').srcObject = null;
-        micButton.style.background = '#10B981';
         log("Disconnected");
       } else {
-        micButton.style.background = '#EF4444';
         await initConnection();
       }
     }
