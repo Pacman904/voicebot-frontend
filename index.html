@@ -42,26 +42,59 @@
         log("Initializing connection...");
         const session = await Parse.Cloud.run("createEphemeralSession");
         
-        peerConnection = new RTCPeerConnection({
+        // Force OPUS codec preference
+        const pcConstraints = {
           iceServers: session.iceServers,
-          iceTransportPolicy: "relay"
+          iceTransportPolicy: "relay",
+          sdpSemantics: 'unified-plan',
+          encodedInsertableStreams: true
+        };
+
+        peerConnection = new RTCPeerConnection(pcConstraints);
+
+        // Add codec preferences
+        const transceiver = peerConnection.addTransceiver('audio', {
+          direction: 'sendrecv'
         });
+        transceiver.setCodecPreferences([
+          { mimeType: 'audio/opus', clockRate: 48000, channels: 2 }
+        ]);
 
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaStream.getTracks().forEach(track => peerConnection.addTrack(track));
         
         peerConnection.ontrack = async (event) => {
+          log(`Received track: ${event.track.kind}`);
           const audioElement = document.getElementById('audioOutput');
-          audioElement.srcObject = event.streams[0];
           
-          try {
-            await audioElement.play();
-            log("Audio playback started");
-          } catch (err) {
-            log("Click the audio player to start playback");
-            audioElement.muted = true; // Workaround for autoplay restrictions
-            await audioElement.play();
-            audioElement.muted = false;
+          // Verify audio tracks
+          if (event.streams[0].getAudioTracks().length > 0) {
+            log("Audio track available");
+            audioElement.srcObject = event.streams[0];
+            
+            // Playback handling
+            const playAudio = async () => {
+              try {
+                await audioElement.play();
+                log("Audio playback started");
+              } catch (err) {
+                log("Click the microphone button to start audio");
+                audioElement.controls = true;
+              }
+            };
+            
+            // Start with user gesture
+            if (document.visibilityState === 'visible') {
+              await playAudio();
+            } else {
+              document.addEventListener('visibilitychange', async () => {
+                if (document.visibilityState === 'visible') {
+                  await playAudio();
+                }
+              });
+            }
+          } else {
+            log("No audio tracks received");
           }
         };
 
@@ -77,7 +110,12 @@
         const source = audioContext.createMediaStreamSource(mediaStream);
         source.connect(vadProcessor);
 
-        const offer = await peerConnection.createOffer();
+        // Create offer with codec preferences
+        const offer = await peerConnection.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: false
+        });
+        
         await peerConnection.setLocalDescription(offer);
 
         const answer = await Parse.Cloud.run("forwardToOpenAI", {
@@ -101,14 +139,17 @@
     }
 
     async function toggleConnection() {
+      const micButton = document.getElementById('micButton');
       if (peerConnection?.connectionState === 'connected') {
         peerConnection.close();
         mediaStream.getTracks().forEach(track => track.stop());
         if (audioContext) await audioContext.close();
         document.getElementById('status').style.display = 'none';
         document.getElementById('audioOutput').srcObject = null;
+        micButton.style.background = '#10B981';
         log("Disconnected");
       } else {
+        micButton.style.background = '#EF4444';
         await initConnection();
       }
     }
