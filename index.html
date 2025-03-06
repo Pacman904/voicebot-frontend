@@ -31,11 +31,29 @@
     let mediaStream = null;
     let audioContext = null;
     let dc = null;
+    let audioQueue = [];
+    let isPlaying = false;
 
     function log(message) {
       const logs = document.getElementById('logs');
       logs.textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`;
       logs.scrollTop = logs.scrollHeight;
+    }
+
+    async function playAudioQueue() {
+      if (isPlaying || audioQueue.length === 0) return;
+      isPlaying = true;
+      const audioData = audioQueue.shift();
+      const audioBuffer = await audioContext.decodeAudioData(audioData);
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+      source.onended = () => {
+        isPlaying = false;
+        playAudioQueue();
+      };
+      source.start();
+      log("Playing audio from queue");
     }
 
     async function initConnection() {
@@ -48,7 +66,6 @@
           iceTransportPolicy: "relay"
         });
 
-        // Logging für Verbindungsstatus
         peerConnection.oniceconnectionstatechange = () => {
           log(`ICE connection state: ${peerConnection.iceConnectionState}`);
         };
@@ -78,15 +95,16 @@
           }
         };
 
-        // Datenkanal erstellen
         dc = peerConnection.createDataChannel("oai-events");
         dc.onopen = () => {
           log("Data channel opened");
           const responseCreate = {
             type: "response.create",
             response: {
-              modalities: ["text"],
-              instructions: "Say hello"
+              modalities: ["text", "audio"],
+              instructions: "Respond to the user's input in a helpful and friendly manner.",
+              voice: "verse",
+              output_audio_format: "pcm16"
             }
           };
           dc.send(JSON.stringify(responseCreate));
@@ -94,6 +112,14 @@
         dc.onmessage = (event) => {
           const message = JSON.parse(event.data);
           log(`Received message: ${JSON.stringify(message)}`);
+          if (message.type === "response.audio.delta") {
+            const audioDelta = Uint8Array.from(atob(message.delta), c => c.charCodeAt(0));
+            const audioData = audioDelta.buffer;
+            audioQueue.push(audioData);
+            playAudioQueue();
+          } else if (message.type === "response.text.delta") {
+            log(`Text response: ${message.delta}`);
+          }
         };
         dc.onerror = (error) => {
           log(`Data channel error: ${error}`);
@@ -102,7 +128,7 @@
           log("Data channel closed");
         };
 
-        audioContext = new AudioContext();
+        audioContext = new AudioContext({ sampleRate: 16000 });
         await audioContext.audioWorklet.addModule('vad-processor.js');
         const vadProcessor = new AudioWorkletNode(audioContext, 'vad-processor');
 
