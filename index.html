@@ -24,8 +24,7 @@
   <script src="https://kit.fontawesome.com/845924f09c.js"></script>
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
-    // WICHTIG: Ersetze die folgenden Platzhalter mit deinen tatsächlichen Schlüsseln aus dem Back4App-Dashboard
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM"); // Ersetze mit Application ID und JavaScript Key
+    Parse.initialize("YOUR_APP_ID", "YOUR_JAVASCRIPT_KEY"); // Ersetze mit deinen Back4App-Schlüsseln
     Parse.serverURL = "https://parseapi.back4app.com/";
 
     let peerConnection = null;
@@ -43,7 +42,6 @@
       try {
         log("Initializing connection...");
 
-        // Überprüfe, ob Parse.serverURL korrekt gesetzt ist
         if (Parse.serverURL !== "https://parseapi.back4app.com/") {
           log("Fehler: Parse.serverURL ist nicht korrekt gesetzt. Überprüfe deine Application ID und deinen JavaScript Key.");
           return;
@@ -80,7 +78,9 @@
             type: "response.create",
             response: {
               modalities: ["text", "audio"],
-              instructions: "Antworte auf die Eingaben des Benutzers hilfreich und freundlich."
+              instructions: "Antworte auf die Eingaben des Benutzers hilfreich und freundlich.",
+              voice: "verse",
+              output_audio_format: "pcm16"
             }
           };
           dc.send(JSON.stringify(responseCreate));
