@@ -42,63 +42,40 @@
         log("Initializing connection...");
         const session = await Parse.Cloud.run("createEphemeralSession");
         
-        // Force OPUS codec preference
-        const pcConstraints = {
+        // WebRTC Configuration with proper codecs
+        peerConnection = new RTCPeerConnection({
           iceServers: session.iceServers,
           iceTransportPolicy: "relay",
-          sdpSemantics: 'unified-plan',
-          encodedInsertableStreams: true
-        };
-
-        peerConnection = new RTCPeerConnection(pcConstraints);
-
-        // Add codec preferences
-        const transceiver = peerConnection.addTransceiver('audio', {
-          direction: 'sendrecv'
+          sdpSemantics: "unified-plan"
         });
-        transceiver.setCodecPreferences([
-          { mimeType: 'audio/opus', clockRate: 48000, channels: 2 }
-        ]);
 
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaStream.getTracks().forEach(track => peerConnection.addTrack(track));
-        
-        peerConnection.ontrack = async (event) => {
-          log(`Received track: ${event.track.kind}`);
-          const audioElement = document.getElementById('audioOutput');
-          
-          // Verify audio tracks
-          if (event.streams[0].getAudioTracks().length > 0) {
-            log("Audio track available");
-            audioElement.srcObject = event.streams[0];
-            
-            // Playback handling
-            const playAudio = async () => {
-              try {
-                await audioElement.play();
-                log("Audio playback started");
-              } catch (err) {
-                log("Click the microphone button to start audio");
-                audioElement.controls = true;
-              }
-            };
-            
-            // Start with user gesture
-            if (document.visibilityState === 'visible') {
-              await playAudio();
-            } else {
-              document.addEventListener('visibilitychange', async () => {
-                if (document.visibilityState === 'visible') {
-                  await playAudio();
-                }
-              });
-            }
-          } else {
-            log("No audio tracks received");
+        // Add ICE candidate logging
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            log(`ICE Candidate: ${event.candidate.candidate}`);
           }
         };
 
+        peerConnection.oniceconnectionstatechange = () => {
+          log(`ICE State: ${peerConnection.iceConnectionState}`);
+        };
+
+        // Get user media with exact constraints
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            sampleSize: 16,
+            channelCount: 1,
+            sampleRate: 16000
+          }
+        });
+
+        // Add audio track with proper settings
+        const audioTrack = mediaStream.getAudioTracks()[0];
+        peerConnection.addTrack(audioTrack, mediaStream);
+
+        // Audio context activation
         audioContext = new AudioContext();
+        await audioContext.resume();
         await audioContext.audioWorklet.addModule('vad-processor.js');
         const vadProcessor = new AudioWorkletNode(audioContext, 'vad-processor');
         
@@ -110,31 +87,45 @@
         const source = audioContext.createMediaStreamSource(mediaStream);
         source.connect(vadProcessor);
 
-        // Create offer with codec preferences
+        // Create offer with proper audio settings
         const offer = await peerConnection.createOffer({
-          offerToReceiveAudio: true,
+          offerToReceiveAudio: false,
           offerToReceiveVideo: false
         });
         
         await peerConnection.setLocalDescription(offer);
 
+        // Verify SDP before sending
+        log(`Sending SDP Offer: ${offer.sdp.substring(0, 120)}...`);
+        
         const answer = await Parse.Cloud.run("forwardToOpenAI", {
           clientSecret: session.clientSecret,
           sdp: offer.sdp
         });
 
+        log(`Received SDP Answer: ${answer.sdp.substring(0, 120)}...`);
+        
         await peerConnection.setRemoteDescription(
           new RTCSessionDescription({
             type: 'answer',
             sdp: answer.sdp
           })
         );
-        
+
+        // Audio output handling
+        peerConnection.ontrack = (event) => {
+          const audioElement = document.getElementById('audioOutput');
+          audioElement.srcObject = event.streams[0];
+          audioElement.play().catch(() => {
+            log("Click the audio player to start playback");
+          });
+        };
+
         document.getElementById('status').style.display = 'block';
-        log("Connection successful!");
+        log("Connection established successfully");
 
       } catch (error) {
-        log(`Error: ${error.message}`);
+        log(`Critical Error: ${error.message}`);
       }
     }
 
