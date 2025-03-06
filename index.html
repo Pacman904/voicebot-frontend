@@ -24,7 +24,10 @@
   <script src="https://kit.fontawesome.com/845924f09c.js"></script>
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
+    // WICHTIG: Ersetze die folgenden Platzhalter mit deinen tatsächlichen Schlüsseln aus dem Back4App-Dashboard
+    Parse.initialize("YOUR_APP_ID", "YOUR_JAVASCRIPT_KEY"); // Ersetze mit Application ID und JavaScript Key
+    Parse.serverURL = "https://parseapi.back4app.com/";
+
     let peerConnection = null;
     let mediaStream = null;
     let audioContext = null;
@@ -39,6 +42,13 @@
     async function initConnection() {
       try {
         log("Initializing connection...");
+
+        // Überprüfe, ob Parse.serverURL korrekt gesetzt ist
+        if (Parse.serverURL !== "https://parseapi.back4app.com/") {
+          log("Fehler: Parse.serverURL ist nicht korrekt gesetzt. Überprüfe deine Application ID und deinen JavaScript Key.");
+          return;
+        }
+
         const session = await Parse.Cloud.run("createEphemeralSession");
 
         peerConnection = new RTCPeerConnection({
@@ -52,12 +62,11 @@
         peerConnection.ontrack = async (event) => {
           const audioElement = document.getElementById('audioOutput');
           audioElement.srcObject = event.streams[0];
-
           try {
             await audioElement.play();
-            log("Audio playback started");
+            log("Audio-Wiedergabe gestartet");
           } catch (err) {
-            log("Click the audio player to start playback");
+            log("Klicke auf den Audio-Player, um die Wiedergabe zu starten");
             audioElement.muted = true;
             await audioElement.play();
             audioElement.muted = false;
@@ -66,28 +75,28 @@
 
         dc = peerConnection.createDataChannel("oai-events");
         dc.onopen = () => {
-          log("Data channel opened");
+          log("Datenkanal geöffnet");
           const responseCreate = {
             type: "response.create",
             response: {
               modalities: ["text", "audio"],
-              instructions: "Respond to the user's input in a helpful and friendly manner."
+              instructions: "Antworte auf die Eingaben des Benutzers hilfreich und freundlich."
             }
           };
           dc.send(JSON.stringify(responseCreate));
         };
         dc.onmessage = (event) => {
           const message = JSON.parse(event.data);
-          log(`Received message: ${JSON.stringify(message)}`);
+          log(`Nachricht empfangen: ${JSON.stringify(message)}`);
           if (message.type === "response.text.delta") {
-            log(`Text response: ${message.delta}`);
+            log(`Textantwort: ${message.delta}`);
           }
         };
         dc.onerror = (error) => {
-          log(`Data channel error: ${error}`);
+          log(`Datenkanalfehler: ${error}`);
         };
         dc.onclose = () => {
-          log("Data channel closed");
+          log("Datenkanal geschlossen");
         };
 
         audioContext = new AudioContext();
@@ -95,8 +104,8 @@
         const vadProcessor = new AudioWorkletNode(audioContext, 'vad-processor');
 
         vadProcessor.port.onmessage = (e) => {
-          if (e.data.type === "speech_started") log("Speech detected");
-          if (e.data.type === "speech_stopped") log("Speech ended");
+          if (e.data.type === "speech_started") log("Sprache erkannt");
+          if (e.data.type === "speech_stopped") log("Sprache beendet");
         };
 
         const source = audioContext.createMediaStreamSource(mediaStream);
@@ -118,9 +127,9 @@
         );
 
         document.getElementById('status').style.display = 'block';
-        log("Connection successful!");
+        log("Verbindung erfolgreich!");
       } catch (error) {
-        log(`Error: ${error.message}`);
+        log(`Fehler: ${error.message}`);
       }
     }
 
@@ -131,7 +140,7 @@
         if (audioContext) await audioContext.close();
         document.getElementById('status').style.display = 'none';
         document.getElementById('audioOutput').srcObject = null;
-        log("Disconnected");
+        log("Verbindung getrennt");
       } else {
         await initConnection();
       }
