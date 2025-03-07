@@ -6,7 +6,8 @@
   <style>
     body { font-family: Arial; margin: 0; padding: 20px; background: #f0f2f5; }
     .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    #micButton { background: #10B981; width: 80px; height: 80px; border-radius: 50%; border: none; cursor: pointer; margin: 20px auto; display: block; }
+    #micButton { background: #10B981; width: 80px; height: 80px; border-radius: 50%; border: none; cursor: pointer; margin: 20px auto; display: block; color: white; font-size: 24px; }
+    #micButton.stop { background: #EF4444; }
     #status { color: #059669; text-align: center; display: none; }
     #logs { background: #1f2937; color: white; padding: 15px; border-radius: 8px; font-family: monospace; height: 200px; overflow-y: auto; }
   </style>
@@ -15,9 +16,7 @@
   <div class="container">
     <div id="status">● LIVE</div>
     <div id="logs"></div>
-    <button id="micButton" onclick="toggleConnection()">
-      <i class="fas fa-microphone" style="font-size: 24px;"></i>
-    </button>
+    <button id="micButton" onclick="toggleConnection()">🎤</button>
     <audio id="audioOutput" controls autoplay style="width: 100%; margin-top: 20px;"></audio>
   </div>
 
@@ -38,7 +37,6 @@
       logs.scrollTop = logs.scrollHeight;
     }
 
-    // VAD-Prozessor-Code direkt im Script-Tag
     const vadProcessorCode = `
       class VADProcessor extends AudioWorkletProcessor {
         static get parameterDescriptors() {
@@ -85,7 +83,6 @@
       registerProcessor('vad-processor', VADProcessor);
     `;
 
-    // VAD-Prozessor-Modul als Blob erstellen und laden
     async function loadVADProcessor() {
       const blob = new Blob([vadProcessorCode], { type: 'application/javascript' });
       const url = URL.createObjectURL(blob);
@@ -94,7 +91,7 @@
 
     async function initConnection() {
       try {
-        log("Initializing connection...");
+        log("Verbindung wird initialisiert...");
 
         const session = await Parse.Cloud.run("createEphemeralSession");
 
@@ -103,7 +100,14 @@
           iceTransportPolicy: "relay"
         });
 
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true
+          }
+        });
         mediaStream.getTracks().forEach(track => peerConnection.addTrack(track));
 
         peerConnection.ontrack = async (event) => {
@@ -113,7 +117,7 @@
             await audioElement.play();
             log("Audio-Wiedergabe gestartet");
           } catch (err) {
-            log("Klicke auf den Audio-Player, um die Wiedergabe zu starten");
+            log("Fehler bei der Audio-Wiedergabe: " + err.message);
             audioElement.muted = true;
             await audioElement.play();
             audioElement.muted = false;
@@ -127,7 +131,7 @@
             type: "response.create",
             response: {
               modalities: ["text", "audio"],
-              instructions: "Antworte auf die Eingaben des Benutzers hilfreich und freundlich.",
+              instructions: "Antworte hilfreich und freundlich.",
               voice: "verse",
               output_audio_format: "pcm16"
             }
@@ -142,8 +146,7 @@
           }
         };
 
-        // AudioWorklet initialisieren
-        audioContext = new AudioContext();
+        audioContext = new AudioContext({ sampleRate: 16000 });
         await loadVADProcessor();
         const vadProcessor = new AudioWorkletNode(audioContext, 'vad-processor');
 
@@ -172,6 +175,8 @@
         );
 
         document.getElementById('status').style.display = 'block';
+        document.getElementById('micButton').classList.add('stop');
+        document.getElementById('micButton').textContent = '⏹️';
         log("Verbindung erfolgreich!");
       } catch (error) {
         log(`Fehler: ${error.message}`);
@@ -179,12 +184,15 @@
     }
 
     async function toggleConnection() {
+      const micButton = document.getElementById('micButton');
       if (peerConnection?.connectionState === 'connected') {
         peerConnection.close();
         mediaStream.getTracks().forEach(track => track.stop());
         if (audioContext) await audioContext.close();
         document.getElementById('status').style.display = 'none';
         document.getElementById('audioOutput').srcObject = null;
+        micButton.classList.remove('stop');
+        micButton.textContent = '🎤';
         log("Verbindung getrennt");
       } else {
         await initConnection();
