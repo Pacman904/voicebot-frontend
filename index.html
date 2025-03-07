@@ -24,7 +24,7 @@
   <script src="https://kit.fontawesome.com/845924f09c.js"></script>
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM"); // Ersetze mit deinen Back4App-Schlüsseln
+    Parse.initialize("YOUR_APP_ID", "YOUR_JAVASCRIPT_KEY"); // Ersetze mit deinen Back4App-Schlüsseln
     Parse.serverURL = "https://parseapi.back4app.com/";
 
     let peerConnection = null;
@@ -38,14 +38,63 @@
       logs.scrollTop = logs.scrollHeight;
     }
 
+    // VAD-Prozessor-Code direkt im Script-Tag
+    const vadProcessorCode = `
+      class VADProcessor extends AudioWorkletProcessor {
+        static get parameterDescriptors() {
+          return [{ name: 'threshold', defaultValue: 0.1 }];
+        }
+
+        constructor() {
+          super();
+          this.speaking = false;
+          this.buffer = new Float32Array(512);
+          this.index = 0;
+          this.threshold = 0.1;
+
+          this.port.onmessage = (e) => {
+            if (e.data.threshold) this.threshold = e.data.threshold;
+          };
+        }
+
+        process(inputs) {
+          const input = inputs[0]?.[0];
+          if (!input) return true;
+
+          for (let i = 0; i < input.length; i++) {
+            this.buffer[this.index] = input[i];
+            this.index = (this.index + 1) % 512;
+            if (this.index === 0) this.analyze();
+          }
+          return true;
+        }
+
+        analyze() {
+          const threshold = this.parameters?.get('threshold')?.[0] || this.threshold;
+          const energy = this.buffer.reduce((sum, val) => sum + val ** 2, 0) / 512;
+
+          if (energy > threshold && !this.speaking) {
+            this.speaking = true;
+            this.port.postMessage({ type: "speech_started" });
+          } else if (energy < threshold * 0.5 && this.speaking) {
+            this.speaking = false;
+            this.port.postMessage({ type: "speech_stopped" });
+          }
+        }
+      }
+      registerProcessor('vad-processor', VADProcessor);
+    `;
+
+    // VAD-Prozessor-Modul als Blob erstellen und laden
+    async function loadVADProcessor() {
+      const blob = new Blob([vadProcessorCode], { type: 'application/javascript' });
+      const url = URL.createObjectURL(blob);
+      await audioContext.audioWorklet.addModule(url);
+    }
+
     async function initConnection() {
       try {
         log("Initializing connection...");
-
-        if (Parse.serverURL !== "https://parseapi.back4app.com/") {
-          log("Fehler: Parse.serverURL ist nicht korrekt gesetzt. Überprüfe deine Application ID und deinen JavaScript Key.");
-          return;
-        }
 
         const session = await Parse.Cloud.run("createEphemeralSession");
 
@@ -92,15 +141,10 @@
             log(`Textantwort: ${message.delta}`);
           }
         };
-        dc.onerror = (error) => {
-          log(`Datenkanalfehler: ${error}`);
-        };
-        dc.onclose = () => {
-          log("Datenkanal geschlossen");
-        };
 
+        // AudioWorklet initialisieren
         audioContext = new AudioContext();
-        await audioContext.audioWorklet.addModule('vad-processor.js');
+        await loadVADProcessor();
         const vadProcessor = new AudioWorkletNode(audioContext, 'vad-processor');
 
         vadProcessor.port.onmessage = (e) => {
@@ -110,6 +154,7 @@
 
         const source = audioContext.createMediaStreamSource(mediaStream);
         source.connect(vadProcessor);
+        vadProcessor.connect(audioContext.destination);
 
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
