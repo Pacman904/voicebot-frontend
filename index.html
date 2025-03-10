@@ -19,7 +19,6 @@
     <button id="micButton" onclick="toggleConnection()">🎤</button>
     <audio id="audioOutput" controls autoplay style="width: 100%; margin-top: 20px;"></audio>
   </div>
-  <script src="https://kit.fontawesome.com/845924f09c.js"></script>
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
     Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
@@ -29,6 +28,7 @@
     let mediaStream = null;
     let audioContext = null;
     let dc = null;
+    let audioChunks = [];
 
     function log(message) {
       const logs = document.getElementById('logs');
@@ -65,21 +65,23 @@
         });
 
         peerConnection.ontrack = async (event) => {
+          log("Eingehender Medienstream erkannt");
           const audioElement = document.getElementById('audioOutput');
           audioElement.srcObject = event.streams[0];
-          try {
-            await audioElement.play();
-            log("Audio-Wiedergabe gestartet");
-          } catch (err) {
-            log("Fehler bei der Audio-Wiedergabe: " + err.message);
-          }
+          
+          // Sicherstellen, dass Audio automatisch abgespielt wird
+          audioElement.oncanplaythrough = () => {
+            audioElement.play().catch(err => {
+              log(`Wiedergabefehler: ${err.message}`);
+            });
+          };
         };
 
         dc = peerConnection.createDataChannel("oai-events");
         dc.onopen = () => {
           log("Datenkanal geöffnet");
           
-          // Direkt Response anfordern
+          // Response anfordern
           const responseCreate = {
             type: "response.create",
             response: {
@@ -96,6 +98,20 @@
         dc.onmessage = (event) => {
           const message = JSON.parse(event.data);
           log(`Nachricht empfangen: ${JSON.stringify(message)}`);
+          
+          if (message.type === "response.audio") {
+            // Audiowiedergabe verarbeiten
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const audioData = new Uint8Array(message.audio.data);
+            
+            audioContext.decodeAudioData(audioData.buffer, (buffer) => {
+              const source = audioContext.createBufferSource();
+              source.buffer = buffer;
+              source.connect(audioContext.destination);
+              source.start();
+              log("Audiodaten wiedergegeben");
+            });
+          }
           
           if (message.type === "response.text.delta") {
             log(`Textantwort: ${message.delta}`);
