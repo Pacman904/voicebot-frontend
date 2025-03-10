@@ -137,7 +137,7 @@
           const responseCreate = {
             type: "response.create",
             response: {
-              modalities: ["audio"],
+              modalities: ["audio", "text"], // Hier ist die Definition!
               voice: "verse",
               output_audio_format: "pcm16"
             }
@@ -189,7 +189,7 @@
         document.getElementById('micButton').textContent = '⏹️';
         log("Verbindung erfolgreich!");
       } catch (error) {
-        log(`Fehler: ${error.message}`);
+        log(`Fehler: ${error.message || JSON.stringify(error)}`);
       }
     }
 
