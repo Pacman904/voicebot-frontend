@@ -100,6 +100,10 @@
           iceTransportPolicy: "relay"
         });
 
+        peerConnection.oniceconnectionstatechange = () => {
+          log(`ICE Connection State: ${peerConnection.iceConnectionState}`);
+        };
+
         mediaStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             sampleRate: 24000,
@@ -108,7 +112,10 @@
             noiseSuppression: true
           }
         });
-        mediaStream.getTracks().forEach(track => peerConnection.addTrack(track));
+        mediaStream.getTracks().forEach(track => {
+          peerConnection.addTrack(track, mediaStream);
+          log(`Audio-Track hinzugefügt: ${track.id}`);
+        });
 
         peerConnection.ontrack = async (event) => {
           const audioElement = document.getElementById('audioOutput');
@@ -130,12 +137,13 @@
           const responseCreate = {
             type: "response.create",
             response: {
-              modalities: ["text", "audio"],
+              modalities: ["audio"],
               voice: "verse",
               output_audio_format: "pcm16"
             }
           };
           dc.send(JSON.stringify(responseCreate));
+          log(`Gesendete Nachricht: ${JSON.stringify(responseCreate)}`);
         };
         dc.onmessage = (event) => {
           const message = JSON.parse(event.data);
@@ -143,6 +151,9 @@
           if (message.type === "response.text.delta") {
             log(`Textantwort: ${message.delta}`);
           }
+        };
+        dc.onerror = (error) => {
+          log(`Datenkanal-Fehler: ${error.message || error}`);
         };
 
         audioContext = new AudioContext({ sampleRate: 24000 });
