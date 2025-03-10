@@ -23,7 +23,7 @@
   <script src="https://kit.fontawesome.com/845924f09c.js"></script>
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
-    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM"); // Ersetze mit deinen Back4App-Schlüsseln
+    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
     Parse.serverURL = "https://parseapi.back4app.com/";
 
     let peerConnection = null;
@@ -61,7 +61,7 @@
 
           for (let i = 0; i < input.length; i++) {
             this.buffer[this.index] = input[i];
-            this.index = (this.index + 1) % 512;
+            this.index = (this.index + 1) % 4096;
             if (this.index === 0) this.analyze();
           }
           return true;
@@ -69,7 +69,7 @@
 
         analyze() {
           const threshold = this.parameters?.get('threshold')?.[0] || this.threshold;
-          const energy = this.buffer.reduce((sum, val) => sum + val ** 2, 0) / 512;
+          const energy = this.buffer.reduce((sum, val) => sum + val ** 2, 0) / 4096;
 
           if (energy > threshold && !this.speaking) {
             this.speaking = true;
@@ -133,7 +133,8 @@
               modalities: ["text", "audio"],
               instructions: "Antworte hilfreich und freundlich.",
               voice: "verse",
-              output_audio_format: "pcm16"
+              output_audio_format: "pcm16",
+              max_output_tokens: 100
             }
           };
           dc.send(JSON.stringify(responseCreate));
@@ -146,7 +147,7 @@
           }
         };
 
-        audioContext = new AudioContext({ sampleRate: 16000 });
+        audioContext = new AudioContext({ sampleRate: 24000 });
         await loadVADProcessor();
         const vadProcessor = new AudioWorkletNode(audioContext, 'vad-processor');
 
