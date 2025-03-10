@@ -19,13 +19,12 @@
     <button id="micButton" onclick="toggleConnection()">🎤</button>
     <audio id="audioOutput" controls autoplay style="width: 100%; margin-top: 20px;"></audio>
   </div>
-
   <script src="https://kit.fontawesome.com/845924f09c.js"></script>
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
     Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
     Parse.serverURL = "https://parseapi.back4app.com/";
-
+    
     let peerConnection = null;
     let mediaStream = null;
     let audioContext = null;
@@ -37,64 +36,11 @@
       logs.scrollTop = logs.scrollHeight;
     }
 
-    const vadProcessorCode = `
-      class VADProcessor extends AudioWorkletProcessor {
-        static get parameterDescriptors() {
-          return [{ name: 'threshold', defaultValue: 0.1 }];
-        }
-
-        constructor() {
-          super();
-          this.speaking = false;
-          this.buffer = new Float32Array(4096);
-          this.index = 0;
-          this.threshold = 0.1;
-
-          this.port.onmessage = (e) => {
-            if (e.data.threshold) this.threshold = e.data.threshold;
-          };
-        }
-
-        process(inputs) {
-          const input = inputs[0]?.[0];
-          if (!input) return true;
-
-          for (let i = 0; i < input.length; i++) {
-            this.buffer[this.index] = input[i];
-            this.index = (this.index + 1) % 4096;
-            if (this.index === 0) this.analyze();
-          }
-          return true;
-        }
-
-        analyze() {
-          const threshold = this.parameters?.get('threshold')?.[0] || this.threshold;
-          const energy = this.buffer.reduce((sum, val) => sum + val ** 2, 0) / 4096;
-
-          if (energy > threshold && !this.speaking) {
-            this.speaking = true;
-            this.port.postMessage({ type: "speech_started" });
-          } else if (energy < threshold * 0.5 && this.speaking) {
-            this.speaking = false;
-            this.port.postMessage({ type: "speech_stopped" });
-          }
-        }
-      }
-      registerProcessor('vad-processor', VADProcessor);
-    `;
-
-    async function loadVADProcessor() {
-      const blob = new Blob([vadProcessorCode], { type: 'application/javascript' });
-      const url = URL.createObjectURL(blob);
-      await audioContext.audioWorklet.addModule(url);
-    }
-
     async function initConnection() {
       try {
         log("Verbindung wird initialisiert...");
-
         const session = await Parse.Cloud.run("createEphemeralSession");
-
+        
         peerConnection = new RTCPeerConnection({
           iceServers: session.iceServers,
           iceTransportPolicy: "relay"
@@ -112,6 +58,7 @@
             noiseSuppression: true
           }
         });
+
         mediaStream.getTracks().forEach(track => {
           peerConnection.addTrack(track, mediaStream);
           log(`Audio-Track hinzugefügt: ${track.id}`);
@@ -125,58 +72,71 @@
             log("Audio-Wiedergabe gestartet");
           } catch (err) {
             log("Fehler bei der Audio-Wiedergabe: " + err.message);
-            audioElement.muted = true;
-            await audioElement.play();
-            audioElement.muted = false;
           }
         };
 
         dc = peerConnection.createDataChannel("oai-events");
         dc.onopen = () => {
           log("Datenkanal geöffnet");
-          const responseCreate = {
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"], // Hier ist die Definition!
+          
+          // Korrekte Session-Konfiguration
+          const sessionConfig = {
+            type: "session.create",
+            session: {
+              modalities: ["audio", "text"],
               voice: "verse",
-              output_audio_format: "pcm16"
+              output_audio_format: "pcm16",
+              turn_detection: {
+                type: "server_vad",
+                threshold: 0.5,
+                prefix_padding_ms: 300,
+                silence_duration_ms: 200,
+                create_response: true,
+                interrupt_response: true
+              },
+              instructions: "Your knowledge cutoff is 2023-10. You are a helpful, witty, and friendly AI. Act like a human, but remember that you aren't a human and that you can't do human things in the real world. Your voice and personality should be warm and engaging, with a lively and playful tone. If interacting in a non-English language, start by using the standard accent or dialect familiar to the user. Talk quickly. You should always call a function if you can."
             }
           };
-          dc.send(JSON.stringify(responseCreate));
-          log(`Gesendete Nachricht: ${JSON.stringify(responseCreate)}`);
+          
+          dc.send(JSON.stringify(sessionConfig));
+          log(`Gesendete Konfiguration: ${JSON.stringify(sessionConfig)}`);
         };
+
         dc.onmessage = (event) => {
           const message = JSON.parse(event.data);
           log(`Nachricht empfangen: ${JSON.stringify(message)}`);
+          
+          if (message.type === "session.created") {
+            // Nach Session-Erstellung Response anfordern
+            const responseCreate = {
+              type: "response.create",
+              response: {
+                modalities: ["audio", "text"],
+                voice: "verse",
+                output_audio_format: "pcm16"
+              }
+            };
+            dc.send(JSON.stringify(responseCreate));
+            log("Response angefordert");
+          }
+          
           if (message.type === "response.text.delta") {
             log(`Textantwort: ${message.delta}`);
           }
         };
+
         dc.onerror = (error) => {
           log(`Datenkanal-Fehler: ${error.message || error}`);
         };
 
-        audioContext = new AudioContext({ sampleRate: 24000 });
-        await loadVADProcessor();
-        const vadProcessor = new AudioWorkletNode(audioContext, 'vad-processor');
-
-        vadProcessor.port.onmessage = (e) => {
-          if (e.data.type === "speech_started") log("Sprache erkannt");
-          if (e.data.type === "speech_stopped") log("Sprache beendet");
-        };
-
-        const source = audioContext.createMediaStreamSource(mediaStream);
-        source.connect(vadProcessor);
-        vadProcessor.connect(audioContext.destination);
-
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
-
+        
         const answer = await Parse.Cloud.run("forwardToOpenAI", {
           clientSecret: session.clientSecret,
           sdp: offer.sdp
         });
-
+        
         await peerConnection.setRemoteDescription(
           new RTCSessionDescription({
             type: 'answer',
@@ -188,6 +148,7 @@
         document.getElementById('micButton').classList.add('stop');
         document.getElementById('micButton').textContent = '⏹️';
         log("Verbindung erfolgreich!");
+
       } catch (error) {
         log(`Fehler: ${error.message || JSON.stringify(error)}`);
       }
@@ -197,8 +158,7 @@
       const micButton = document.getElementById('micButton');
       if (peerConnection?.connectionState === 'connected') {
         peerConnection.close();
-        mediaStream.getTracks().forEach(track => track.stop());
-        if (audioContext) await audioContext.close();
+        mediaStream?.getTracks().forEach(track => track.stop());
         document.getElementById('status').style.display = 'none';
         document.getElementById('audioOutput').srcObject = null;
         micButton.classList.remove('stop');
