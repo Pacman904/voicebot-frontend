@@ -131,10 +131,8 @@
             type: "response.create",
             response: {
               modalities: ["text", "audio"],
-              instructions: "Antworte hilfreich und freundlich.",
               voice: "verse",
-              output_audio_format: "pcm16",
-              max_output_tokens: 100
+              output_audio_format: "pcm16"
             }
           };
           dc.send(JSON.stringify(responseCreate));
