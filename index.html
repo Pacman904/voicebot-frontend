@@ -66,7 +66,6 @@
           log("Eingehender Medienstream erkannt");
           const audioElement = document.getElementById('audioOutput');
           audioElement.srcObject = event.streams[0];
-          
           audioElement.oncanplaythrough = () => {
             audioElement.play().catch(err => {
               log(`Wiedergabefehler: ${err.message}`);
@@ -77,22 +76,6 @@
         dc = peerConnection.createDataChannel("oai-events");
         dc.onopen = () => {
           log("Datenkanal geöffnet");
-          
-          // Response anfordern mit klaren Anweisungen
-          const responseCreate = {
-            type: "response.create",
-            response: {
-              modalities: ["audio", "text"],
-              voice: "verse",
-              output_audio_format: "pcm16",
-              instructions: "Greet the user in a friendly tone and ask how you can assist them today.",
-              temperature: 0.8,
-              max_output_tokens: "inf"
-            }
-          };
-          
-          dc.send(JSON.stringify(responseCreate));
-          log(`Gesendete Nachricht: ${JSON.stringify(responseCreate)}`);
         };
 
         dc.onmessage = (event) => {
@@ -100,20 +83,12 @@
           log(`Nachricht empfangen: ${JSON.stringify(message)}`);
           
           if (message.type === "response.audio.delta") {
-            // Audio-Deltas verarbeiten
-            const audioData = new Uint8Array(message.delta);
             log("Audio-Delta empfangen");
           } else if (message.type === "response.text.delta") {
             log(`Textantwort: ${message.delta}`);
-          } else if (message.type === "response.done" && message.response.status === "completed") {
-            log("Antwort erfolgreich abgeschlossen");
           } else if (message.type === "response.done" && message.response.status === "failed") {
             log(`Fehler bei der Antwort: ${JSON.stringify(message.response.status_details)}`);
           }
-        };
-
-        dc.onerror = (error) => {
-          log(`Datenkanal-Fehler: ${error.message || error}`);
         };
 
         const offer = await peerConnection.createOffer();
@@ -135,7 +110,6 @@
         document.getElementById('micButton').classList.add('stop');
         document.getElementById('micButton').textContent = '⏹️';
         log("Verbindung erfolgreich!");
-
       } catch (error) {
         log(`Fehler: ${error.message || JSON.stringify(error)}`);
       }
