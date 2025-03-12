@@ -10,7 +10,6 @@
     #micButton.stop { background: #EF4444; }
     #status { color: #059669; text-align: center; display: none; }
     #logs { background: #1f2937; color: white; padding: 15px; border-radius: 8px; font-family: monospace; height: 200px; overflow-y: auto; }
-    #responseText { margin-top: 20px; padding: 10px; border: 1px solid #ccc; border-radius: 5px; min-height: 50px; }
   </style>
 </head>
 <body>
@@ -18,8 +17,7 @@
     <div id="status">● LIVE</div>
     <div id="logs"></div>
     <button id="micButton" onclick="toggleConnection()">🎤</button>
-    <div id="responseText"></div>
-    <audio id="audioOutput" controls autoplay style="width: 100%; margin-top: 20px; display: none;"></audio>
+    <audio id="audioOutput" controls autoplay style="width: 100%; margin-top: 20px;"></audio>
   </div>
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
@@ -64,35 +62,58 @@
           log(`Audio-Track hinzugefügt: ${track.id}`);
         });
 
+        peerConnection.ontrack = async (event) => {
+          log("Eingehender Medienstream erkannt");
+          const audioElement = document.getElementById('audioOutput');
+          audioElement.srcObject = event.streams[0];
+          
+          audioElement.oncanplaythrough = () => {
+            audioElement.play().catch(err => {
+              log(`Wiedergabefehler: ${err.message}`);
+            });
+          };
+        };
+
         dc = peerConnection.createDataChannel("oai-events");
         dc.onopen = () => {
           log("Datenkanal geöffnet");
+          
+          // Response anfordern mit klaren Anweisungen
+          const responseCreate = {
+            type: "response.create",
+            response: {
+              modalities: ["audio", "text"],
+              voice: "verse",
+              output_audio_format: "pcm16",
+              instructions: "Greet the user in a friendly tone and ask how you can assist them today.",
+              temperature: 0.8,
+              max_output_tokens: "inf"
+            }
+          };
+          
+          dc.send(JSON.stringify(responseCreate));
+          log(`Gesendete Nachricht: ${JSON.stringify(responseCreate)}`);
         };
 
         dc.onmessage = (event) => {
           const message = JSON.parse(event.data);
           log(`Nachricht empfangen: ${JSON.stringify(message)}`);
           
-          if (message.type === "input_audio_buffer.committed") {
-            const responseCreate = {
-              type: "response.create",
-              response: {
-                modalities: ["text"],
-                temperature: 0.8,
-                max_output_tokens: "inf"
-              }
-            };
-            dc.send(JSON.stringify(responseCreate));
-            log(`Gesendete response.create für Textantwort`);
+          if (message.type === "response.audio.delta") {
+            // Audio-Deltas verarbeiten
+            const audioData = new Uint8Array(message.delta);
+            log("Audio-Delta empfangen");
           } else if (message.type === "response.text.delta") {
-            const responseTextDiv = document.getElementById('responseText');
-            responseTextDiv.textContent += message.delta;
-            log(`Textantwort hinzugefügt: ${message.delta}`);
+            log(`Textantwort: ${message.delta}`);
           } else if (message.type === "response.done" && message.response.status === "completed") {
             log("Antwort erfolgreich abgeschlossen");
           } else if (message.type === "response.done" && message.response.status === "failed") {
             log(`Fehler bei der Antwort: ${JSON.stringify(message.response.status_details)}`);
           }
+        };
+
+        dc.onerror = (error) => {
+          log(`Datenkanal-Fehler: ${error.message || error}`);
         };
 
         const offer = await peerConnection.createOffer();
@@ -126,7 +147,7 @@
         peerConnection.close();
         mediaStream?.getTracks().forEach(track => track.stop());
         document.getElementById('status').style.display = 'none';
-        document.getElementById('responseText').textContent = '';
+        document.getElementById('audioOutput').srcObject = null;
         micButton.classList.remove('stop');
         micButton.textContent = '🎤';
         log("Verbindung getrennt");
