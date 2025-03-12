@@ -26,9 +26,7 @@
     
     let peerConnection = null;
     let mediaStream = null;
-    let audioContext = null;
     let dc = null;
-    let audioChunks = [];
 
     function log(message) {
       const logs = document.getElementById('logs');
@@ -69,7 +67,6 @@
           const audioElement = document.getElementById('audioOutput');
           audioElement.srcObject = event.streams[0];
           
-          // Sicherstellen, dass Audio automatisch abgespielt wird
           audioElement.oncanplaythrough = () => {
             audioElement.play().catch(err => {
               log(`Wiedergabefehler: ${err.message}`);
@@ -81,13 +78,16 @@
         dc.onopen = () => {
           log("Datenkanal geöffnet");
           
-          // Response anfordern
+          // Response anfordern mit klaren Anweisungen
           const responseCreate = {
             type: "response.create",
             response: {
               modalities: ["audio", "text"],
               voice: "verse",
-              output_audio_format: "pcm16"
+              output_audio_format: "pcm16",
+              instructions: "Greet the user in a friendly tone and ask how you can assist them today.",
+              temperature: 0.8,
+              max_output_tokens: "inf"
             }
           };
           
@@ -99,22 +99,16 @@
           const message = JSON.parse(event.data);
           log(`Nachricht empfangen: ${JSON.stringify(message)}`);
           
-          if (message.type === "response.audio") {
-            // Audiowiedergabe verarbeiten
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const audioData = new Uint8Array(message.audio.data);
-            
-            audioContext.decodeAudioData(audioData.buffer, (buffer) => {
-              const source = audioContext.createBufferSource();
-              source.buffer = buffer;
-              source.connect(audioContext.destination);
-              source.start();
-              log("Audiodaten wiedergegeben");
-            });
-          }
-          
-          if (message.type === "response.text.delta") {
+          if (message.type === "response.audio.delta") {
+            // Audio-Deltas verarbeiten
+            const audioData = new Uint8Array(message.delta);
+            log("Audio-Delta empfangen");
+          } else if (message.type === "response.text.delta") {
             log(`Textantwort: ${message.delta}`);
+          } else if (message.type === "response.done" && message.response.status === "completed") {
+            log("Antwort erfolgreich abgeschlossen");
+          } else if (message.type === "response.done" && message.response.status === "failed") {
+            log(`Fehler bei der Antwort: ${JSON.stringify(message.response.status_details)}`);
           }
         };
 
