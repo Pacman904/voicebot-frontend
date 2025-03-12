@@ -10,8 +10,6 @@
     #micButton.stop { background: #EF4444; }
     #status { color: #059669; text-align: center; display: none; }
     #logs { background: #1f2937; color: white; padding: 15px; border-radius: 8px; font-family: monospace; height: 200px; overflow-y: auto; }
-    #userInput { width: 70%; padding: 5px; }
-    #sendButton { width: 25%; padding: 5px; }
     #responseText { margin-top: 20px; padding: 10px; border: 1px solid #ccc; border-radius: 5px; min-height: 50px; }
   </style>
 </head>
@@ -20,10 +18,6 @@
     <div id="status">● LIVE</div>
     <div id="logs"></div>
     <button id="micButton" onclick="toggleConnection()">🎤</button>
-    <div>
-      <input type="text" id="userInput" placeholder="Type your message here">
-      <button id="sendButton" onclick="sendMessage()">Send</button>
-    </div>
     <div id="responseText"></div>
     <audio id="audioOutput" controls autoplay style="width: 100%; margin-top: 20px; display: none;"></audio>
   </div>
@@ -70,17 +64,6 @@
           log(`Audio-Track hinzugefügt: ${track.id}`);
         });
 
-        peerConnection.ontrack = async (event) => {
-          log("Eingehender Medienstream erkannt");
-          const audioElement = document.getElementById('audioOutput');
-          audioElement.srcObject = event.streams[0];
-          audioElement.oncanplaythrough = () => {
-            audioElement.play().catch(err => {
-              log(`Wiedergabefehler: ${err.message}`);
-            });
-          };
-        };
-
         dc = peerConnection.createDataChannel("oai-events");
         dc.onopen = () => {
           log("Datenkanal geöffnet");
@@ -90,7 +73,18 @@
           const message = JSON.parse(event.data);
           log(`Nachricht empfangen: ${JSON.stringify(message)}`);
           
-          if (message.type === "response.text.delta") {
+          if (message.type === "input_audio_buffer.committed") {
+            const responseCreate = {
+              type: "response.create",
+              response: {
+                modalities: ["text"],
+                temperature: 0.8,
+                max_output_tokens: "inf"
+              }
+            };
+            dc.send(JSON.stringify(responseCreate));
+            log(`Gesendete response.create für Textantwort`);
+          } else if (message.type === "response.text.delta") {
             const responseTextDiv = document.getElementById('responseText');
             responseTextDiv.textContent += message.delta;
             log(`Textantwort hinzugefügt: ${message.delta}`);
@@ -99,10 +93,6 @@
           } else if (message.type === "response.done" && message.response.status === "failed") {
             log(`Fehler bei der Antwort: ${JSON.stringify(message.response.status_details)}`);
           }
-        };
-
-        dc.onerror = (error) => {
-          log(`Datenkanal-Fehler: ${error.message || error}`);
         };
 
         const offer = await peerConnection.createOffer();
@@ -128,35 +118,6 @@
       } catch (error) {
         log(`Fehler: ${error.message || JSON.stringify(error)}`);
       }
-    }
-
-    function sendMessage() {
-      const userInput = document.getElementById('userInput').value;
-      if (!userInput) return;
-      
-      const itemCreate = {
-        type: "conversation.item.create",
-        item: {
-          type: "message",
-          role: "user",
-          content: [{ type: "input_text", text: userInput }]
-        }
-      };
-      dc.send(JSON.stringify(itemCreate));
-      log(`Gesendete Benutzernachricht: ${userInput}`);
-      
-      const responseCreate = {
-        type: "response.create",
-        response: {
-          modalities: ["text"],
-          temperature: 0.8,
-          max_output_tokens: "inf"
-        }
-      };
-      dc.send(JSON.stringify(responseCreate));
-      log(`Gesendete response.create für Textantwort`);
-      
-      document.getElementById('userInput').value = ''; // Eingabe leeren
     }
 
     async function toggleConnection() {
