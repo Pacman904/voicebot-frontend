@@ -246,6 +246,7 @@
             }
           } catch (error) {
             console.error("Error parsing message:", error);
+            addMessage(`Error parsing message: ${error.message}`, true);
           }
         };
 
@@ -291,11 +292,31 @@
         });
 
         console.log("Server Response:", response);
-        sessionId = response.sessionId;
-
-        if (!response.sessionId || !response.clientSecret || !response.iceServers) {
-          throw new Error("Invalid server response");
+        
+        // Debuggen der Server-Antwort
+        addMessage(`Server responded with: ${JSON.stringify(response)}`, false);
+        
+        // KORRIGIERT: Überprüfe, ob alle notwendigen Felder vorhanden sind
+        if (!response || !response.sessionId || !response.clientSecret) {
+          addMessage("Response dump: " + JSON.stringify(response), true);
+          throw new Error("Invalid server response: missing required fields");
         }
+        
+        if (!response.iceServers || !Array.isArray(response.iceServers)) {
+          addMessage("Missing ICE servers, using defaults", true);
+          response.iceServers = [
+            {
+              urls: "stun:stun.relay.metered.ca:80",
+            },
+            {
+              urls: "turn:global.relay.metered.ca:80",
+              username: "dabe0db86808a99aa36c7309",
+              credential: "n7sdOC9KUqBloUJ4",
+            }
+          ];
+        }
+        
+        sessionId = response.sessionId;
 
         // Initialize WebRTC with parameters
         initializeWebRTC(
@@ -324,18 +345,24 @@
       if (!peerConnection) throw new Error("WebRTC not initialized");
 
       try {
+        addMessage("Creating SDP offer...");
+        
         // Create SDP offer
         const offer = await peerConnection.createOffer({
           offerToReceiveAudio: true,
           offerToReceiveVideo: false
         });
         await peerConnection.setLocalDescription(offer);
+        
+        addMessage("Local description set, sending to server...");
 
         // Send SDP offer to backend
         await Parse.Cloud.run("sendSignalingData", {
           sessionId: sessionId,
           data: { type: "offer", sdp: offer.sdp }
         });
+        
+        addMessage("Sending SDP offer to OpenAI...");
 
         // Send SDP offer to OpenAI
         const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
@@ -348,12 +375,20 @@
         });
 
         if (!sdpResponse.ok) {
-          const errorData = await sdpResponse.json();
-          throw new Error(`OpenAI Error: ${errorData.error?.message || "Unknown error"}`);
+          const errorText = await sdpResponse.text();
+          let errorMessage = "Unknown error";
+          try {
+            const errorData = JSON.parse(errorText);
+            errorMessage = errorData.error?.message || "Unknown error";
+          } catch (e) {
+            errorMessage = errorText || "Unknown error";
+          }
+          throw new Error(`OpenAI Error: ${errorMessage}`);
         }
 
         // Set remote description from OpenAI answer
         const answerSdp = await sdpResponse.text();
+        addMessage("Got SDP answer from OpenAI, setting remote description...");
         await peerConnection.setRemoteDescription({
           type: "answer",
           sdp: answerSdp
