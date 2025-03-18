@@ -297,7 +297,7 @@
         addMessage(`Server responded with: ${JSON.stringify(response)}`, false);
         
         // KORRIGIERT: Überprüfe, ob alle notwendigen Felder vorhanden sind
-        if (!response || !response.sessionId || !response.clientSecret) {
+        if (!response || !response.openaiSessionId || !response.clientSecret) {
           addMessage("Response dump: " + JSON.stringify(response), true);
           throw new Error("Invalid server response: missing required fields");
         }
@@ -316,7 +316,7 @@
           ];
         }
         
-        sessionId = response.sessionId;
+        sessionId = response.openaiSessionId;
 
         // Initialize WebRTC with parameters
         initializeWebRTC(
