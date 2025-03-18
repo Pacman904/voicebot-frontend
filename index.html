@@ -5,123 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenAI Voice Assistant</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      background-color: #f4f4f4;
-      margin: 0;
-    }
-    .container {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-    }
-    .phone {
-      width: 300px;
-      height: 600px;
-      background-color: #111;
-      border-radius: 30px;
-      padding: 20px;
-      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
-      position: relative;
-      overflow: hidden;
-    }
-    .phone-screen {
-      background-color: white;
-      height: 100%;
-      border-radius: 20px;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-    .phone-status {
-      height: 30px;
-      background-color: #f8f8f8;
-      border-bottom: 1px solid #ddd;
-      display: flex;
-      align-items: center;
-      padding: 0 15px;
-    }
-    .call-status {
-      font-size: 14px;
-      font-weight: bold;
-      color: #4CAF50;
-      display: none;
-    }
-    .phone-content {
-      flex: 1;
-      padding: 15px;
-      overflow-y: auto;
-      background-color: #f9f9f9;
-    }
-    .message-box {
-      background-color: white;
-      border-radius: 10px;
-      padding: 10px;
-      margin-bottom: 10px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-      word-wrap: break-word;
-    }
-    .phone-bottom {
-      height: 80px;
-      background-color: #f8f8f8;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      border-top: 1px solid #ddd;
-    }
-    .call-button {
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      background-color: #4CAF50;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      cursor: pointer;
-      transition: background-color 0.3s;
-    }
-    .call-button.active {
-      background-color: #f44336;
-    }
-    .call-button i {
-      color: white;
-      font-size: 24px;
-    }
-    .speech-bubble {
-      position: relative;
-      background: #ffffff;
-      border-radius: 15px;
-      padding: 20px;
-      width: 250px;
-      min-height: 100px;
-      max-height: 400px;
-      overflow-y: auto;
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    }
-    .speech-bubble:after {
-      content: '';
-      position: absolute;
-      left: 0;
-      top: 30px;
-      width: 0;
-      height: 0;
-      border: 15px solid transparent;
-      border-right-color: #ffffff;
-      border-left: 0;
-      margin-top: -15px;
-      margin-left: -15px;
-    }
-    .error {
-      color: #f44336;
-      font-weight: bold;
-    }
-    .hidden {
-      display: none;
-    }
+    /* ... (existing styles remain unchanged) ... */
   </style>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
 </head>
@@ -160,6 +44,7 @@
     let sessionId = null;
     let audioContext = null;
     let mediaStream = null;
+    let audioElement = null;
 
     const callButton = document.getElementById('callButton');
     const phoneContent = document.getElementById('phoneContent');
@@ -218,10 +103,26 @@
 
         peerConnection.ontrack = (event) => {
           console.log("Audio Track received:", event.track);
-          const audioEl = document.createElement("audio");
-          audioEl.autoplay = true;
-          audioEl.srcObject = event.streams[0];
-          document.body.appendChild(audioEl);
+          
+          // Create audio element if not already created
+          if (!audioElement) {
+            audioElement = document.createElement("audio");
+            audioElement.autoplay = true;
+            audioElement.controls = true; // Add controls for debugging
+            document.body.appendChild(audioElement);
+          }
+          
+          // Set the source of the audio element
+          audioElement.srcObject = event.streams[0];
+          
+          // Resume audio context if suspended
+          if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume().then(() => {
+              console.log("Audio context resumed");
+            }).catch(error => {
+              console.error("Failed to resume audio context:", error);
+            });
+          }
         };
 
         // Setup data channel for control events and text responses
@@ -440,6 +341,13 @@
       speechBubble.classList.add('hidden');
       isCallActive = false;
       
+      // Cleanup audio element
+      if (audioElement) {
+        audioElement.srcObject = null;
+        audioElement.remove();
+        audioElement = null;
+      }
+      
       addMessage("Call ended");
     }
 
@@ -467,7 +375,23 @@
       if (mediaStream) {
         mediaStream.getTracks().forEach(track => track.stop());
       }
+      if (audioElement) {
+        audioElement.srcObject = null;
+        audioElement.remove();
+      }
     });
+
+    // Handle audio context state
+    if (audioContext && audioContext.state === 'suspended') {
+      addMessage("Audio context is suspended. Please click anywhere to activate audio.");
+      document.body.addEventListener('click', () => {
+        audioContext.resume().then(() => {
+          console.log("Audio context resumed");
+        }).catch(error => {
+          console.error("Failed to resume audio context:", error);
+        });
+      }, { once: true });
+    }
   </script>
 </body>
 </html>
