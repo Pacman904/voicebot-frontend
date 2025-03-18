@@ -291,13 +291,14 @@
           voice: "alloy" // You can change the voice as needed
         });
 
+        console.log("Server Response Type:", typeof response);
         console.log("Server Response:", response);
         
         // Debuggen der Server-Antwort
         addMessage(`Server responded with: ${JSON.stringify(response)}`, false);
         
         // KORRIGIERT: Überprüfe, ob alle notwendigen Felder vorhanden sind
-        if (!response || !response.openaiSessionId || !response.clientSecret) {
+        if (!response || typeof response !== 'object' || !response.sessionId || !response.clientSecret) {
           addMessage("Response dump: " + JSON.stringify(response), true);
           throw new Error("Invalid server response: missing required fields");
         }
@@ -316,7 +317,7 @@
           ];
         }
         
-        sessionId = response.openaiSessionId;
+        sessionId = response.sessionId;
 
         // Initialize WebRTC with parameters
         initializeWebRTC(
