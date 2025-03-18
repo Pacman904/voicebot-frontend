@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebRTC with OpenAI</title>
+  <title>OpenAI Voice Assistant</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -12,166 +12,424 @@
       align-items: center;
       height: 100vh;
       background-color: #f4f4f4;
+      margin: 0;
     }
     .container {
-      text-align: center;
-      background-color: white;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .phone {
+      width: 300px;
+      height: 600px;
+      background-color: #111;
+      border-radius: 30px;
       padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+      position: relative;
+      overflow: hidden;
     }
-    button {
-      padding: 10px 20px;
-      font-size: 16px;
-      cursor: pointer;
-      background-color: #007bff;
-      color: white;
-      border: none;
-      border-radius: 5px;
+    .phone-screen {
+      background-color: white;
+      height: 100%;
+      border-radius: 20px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
-    button:hover {
-      background-color: #0056b3;
+    .phone-status {
+      height: 30px;
+      background-color: #f8f8f8;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      align-items: center;
+      padding: 0 15px;
     }
-    #onAir {
-      margin-top: 20px;
-      font-size: 24px;
-      color: green;
+    .call-status {
+      font-size: 14px;
+      font-weight: bold;
+      color: #4CAF50;
       display: none;
     }
-    #output {
-      margin-top: 20px;
-      font-size: 16px;
-      color: #333;
+    .phone-content {
+      flex: 1;
+      padding: 15px;
+      overflow-y: auto;
+      background-color: #f9f9f9;
     }
-    #error {
-      margin-top: 10px;
-      font-size: 14px;
-      color: red;
+    .message-box {
+      background-color: white;
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 10px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      word-wrap: break-word;
+    }
+    .phone-bottom {
+      height: 80px;
+      background-color: #f8f8f8;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border-top: 1px solid #ddd;
+    }
+    .call-button {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background-color: #4CAF50;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    .call-button.active {
+      background-color: #f44336;
+    }
+    .call-button i {
+      color: white;
+      font-size: 24px;
+    }
+    .speech-bubble {
+      position: relative;
+      background: #ffffff;
+      border-radius: 15px;
+      padding: 20px;
+      width: 250px;
+      min-height: 100px;
+      max-height: 400px;
+      overflow-y: auto;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    .speech-bubble:after {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 30px;
+      width: 0;
+      height: 0;
+      border: 15px solid transparent;
+      border-right-color: #ffffff;
+      border-left: 0;
+      margin-top: -15px;
+      margin-left: -15px;
+    }
+    .error {
+      color: #f44336;
+      font-weight: bold;
+    }
+    .hidden {
       display: none;
     }
   </style>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
 </head>
 <body>
   <div class="container">
-    <h1>Voicebot</h1>
-    <button id="startButton">Start Connection</button>
-    <div id="onAir">CONNECTED</div>
-    <div id="output"></div>
-    <div id="error"></div>
+    <div class="phone">
+      <div class="phone-screen">
+        <div class="phone-status">
+          <div id="callStatus" class="call-status">Active Call</div>
+        </div>
+        <div id="phoneContent" class="phone-content">
+          <div class="message-box">
+            Ready to connect to OpenAI voice assistant. Press the green button to start.
+          </div>
+        </div>
+        <div class="phone-bottom">
+          <div id="callButton" class="call-button">
+            <i class="fas fa-phone"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="speechBubble" class="speech-bubble hidden">
+      <p>OpenAI responses will appear here once connected.</p>
+    </div>
   </div>
-
+  
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
     Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
     Parse.serverURL = "https://parseapi.back4app.com/";
 
-    let peerConnection;
-    let ws;
-    let mediaRecorder;
-    let audioChunks = [];
-    let sessionId;
-    let openaiSessionId;
+    let peerConnection = null;
+    let dataChannel = null;
+    let isCallActive = false;
+    let sessionId = null;
+    let audioContext = null;
+    let mediaStream = null;
 
-    const startButton = document.getElementById("startButton");
-    const onAirElement = document.getElementById("onAir");
-    const outputElement = document.getElementById("output");
-    const errorElement = document.getElementById("error");
+    const callButton = document.getElementById('callButton');
+    const phoneContent = document.getElementById('phoneContent');
+    const callStatus = document.getElementById('callStatus');
+    const speechBubble = document.getElementById('speechBubble');
 
-    startButton.addEventListener("click", async () => {
-      if (startButton.textContent === "Stop Connection") {
-        // Verbindung beenden
-        if (ws) ws.close();
-        if (peerConnection) peerConnection.close();
-        if (mediaRecorder) mediaRecorder.stop();
-        startButton.textContent = "Start Connection";
-        onAirElement.style.display = "none";
-        outputElement.textContent = "";
-        return;
-      }
+    // Add a message to the phone content
+    function addMessage(message, isError = false) {
+      const messageBox = document.createElement('div');
+      messageBox.className = 'message-box';
+      if (isError) messageBox.classList.add('error');
+      messageBox.textContent = message;
+      phoneContent.appendChild(messageBox);
+      phoneContent.scrollTop = phoneContent.scrollHeight;
+    }
 
+    // Update speech bubble with AI response
+    function updateSpeechBubble(text) {
+      speechBubble.innerHTML = `<p>${text}</p>`;
+      speechBubble.classList.remove('hidden');
+    }
+
+    // Initialize WebRTC
+    function initializeWebRTC(iceServers, clientSecret, parseSessionId) {
       try {
-        startButton.textContent = "Connecting...";
-        // Session vom Backend abrufen
-        const response = await Parse.Cloud.run("createEphemeralSession", {
-          model: "gpt-4o-realtime-preview-2024-12-17",
-          voice: "verse",
-        });
-        sessionId = response.sessionId;
-        openaiSessionId = response.openaiSessionId;
-        const iceServers = response.iceServers;
-
-        // WebRTC-Verbindung initialisieren
-        peerConnection = new RTCPeerConnection({ iceServers });
-        peerConnection.onicecandidate = (event) => {
+        const configuration = { iceServers };
+        peerConnection = new RTCPeerConnection(configuration);
+        
+        peerConnection.onicecandidate = async (event) => {
           if (event.candidate) {
             console.log("ICE Candidate:", event.candidate);
+            try {
+              await sendSignalingData(parseSessionId, {
+                type: "candidate",
+                candidate: event.candidate.candidate
+              });
+            } catch (error) {
+              console.error("Signaling Error:", error);
+              addMessage(`Signaling error: ${error.message}`, true);
+            }
           }
         };
+
         peerConnection.onconnectionstatechange = () => {
           console.log("Connection state:", peerConnection.connectionState);
           if (peerConnection.connectionState === "connected") {
-            onAirElement.style.display = "block";
-            startButton.textContent = "Stop Connection";
+            callStatus.style.display = "block";
+            addMessage("Connection established successfully!");
+            speechBubble.classList.remove('hidden');
+          } else if (peerConnection.connectionState === "disconnected" || 
+                     peerConnection.connectionState === "failed") {
+            endCall();
+            addMessage("Connection lost or failed", true);
           }
         };
+
         peerConnection.ontrack = (event) => {
+          console.log("Audio Track received:", event.track);
           const audioEl = document.createElement("audio");
           audioEl.autoplay = true;
           audioEl.srcObject = event.streams[0];
           document.body.appendChild(audioEl);
         };
 
-        // WebSocket-Verbindung zur OpenAI Realtime API
-        ws = new WebSocket(`wss://api.openai.com/v1/realtime/${openaiSessionId}`, {
-          headers: { "OpenAI-Beta": "realtime=v1" },
+        // Setup data channel for control events and text responses
+        dataChannel = peerConnection.createDataChannel("oaiControlEvents");
+        dataChannel.onopen = () => {
+          console.log("Data channel opened");
+          addMessage("Communication channel opened");
+        };
+        
+        dataChannel.onmessage = (e) => {
+          try {
+            const event = JSON.parse(e.data);
+            console.log("OpenAI Realtime Event:", event);
+            
+            // Handle different event types
+            if (event.type === "transcript") {
+              updateSpeechBubble(event.text);
+            } else if (event.type === "error") {
+              addMessage(`OpenAI Error: ${event.text}`, true);
+            } else if (event.type === "status") {
+              addMessage(`Status: ${event.text}`);
+            }
+          } catch (error) {
+            console.error("Error parsing message:", error);
+          }
+        };
+
+        return peerConnection;
+      } catch (error) {
+        console.error("WebRTC initialization error:", error);
+        addMessage(`WebRTC initialization error: ${error.message}`, true);
+        throw error;
+      }
+    }
+
+    // Start user media (microphone)
+    async function startUserMedia() {
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        
+        // Create audio context for processing if needed
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Add audio tracks to peer connection
+        mediaStream.getAudioTracks().forEach(track => {
+          peerConnection.addTrack(track, mediaStream);
+        });
+        
+        addMessage("Microphone access granted");
+        return mediaStream;
+      } catch (error) {
+        console.error("Media access error:", error);
+        addMessage(`Microphone access error: ${error.message}`, true);
+        throw error;
+      }
+    }
+
+    // Start connection
+    async function startConnection() {
+      try {
+        addMessage("Initializing connection...");
+        
+        // Get session data from backend
+        const response = await Parse.Cloud.run("createEphemeralSession", {
+          model: "gpt-4o-mini-realtime-preview-2024-12-17",
+          voice: "alloy" // You can change the voice as needed
         });
 
-        ws.onopen = () => {
-          console.log("WebSocket-Verbindung geöffnet");
-          ws.send(JSON.stringify({
-            type: "session.update",
-            session: {
-              modalities: ["audio", "text"],
-              instructions: "Du bist ein hilfreicher Voicebot.",
-            },
-          }));
-        };
+        console.log("Server Response:", response);
+        sessionId = response.sessionId;
 
-        ws.onmessage = (event) => {
-          const data = JSON.parse(event.data);
-          if (data.type === "response.text") {
-            outputElement.textContent += `${data.text}\n`;
-          } else if (data.type === "response.audio") {
-            const audioBlob = new Blob([Buffer.from(data.audio, "base64")], { type: "audio/webm" });
-            const audioUrl = URL.createObjectURL(audioBlob);
-            new Audio(audioUrl).play();
-          }
-        };
+        if (!response.sessionId || !response.clientSecret || !response.iceServers) {
+          throw new Error("Invalid server response");
+        }
 
-        ws.onerror = (error) => {
-          errorElement.style.display = "block";
-          errorElement.textContent = "Verbindungsfehler zur OpenAI API";
-          console.error("WebSocket-Fehler:", error);
-        };
+        // Initialize WebRTC with parameters
+        initializeWebRTC(
+          response.iceServers,
+          response.clientSecret,
+          response.sessionId
+        );
 
-        // Audio vom Mikrofon aufnehmen
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        peerConnection.addTrack(stream.getAudioTracks()[0], stream);
+        // Start user media
+        await startUserMedia();
 
-        mediaRecorder = new MediaRecorder(stream);
-        mediaRecorder.ondataavailable = (event) => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(event.data); // Audio an OpenAI senden
-          }
-        };
-        mediaRecorder.start(1000); // Audio alle 1 Sekunde senden
-
+        // Perform signaling
+        await handleSignaling(response.sessionId, response.clientSecret);
+        
+        return true;
       } catch (error) {
-        errorElement.style.display = "block";
-        errorElement.textContent = `Fehler: ${error.message}`;
-        console.error("Fehler beim Verbindungsaufbau:", error);
-        startButton.textContent = "Start Connection";
-        onAirElement.style.display = "none";
+        console.error("Connection Error:", error);
+        addMessage(`Connection error: ${error.message}`, true);
+        endCall();
+        return false;
+      }
+    }
+
+    // Signaling logic
+    async function handleSignaling(sessionId, clientSecret) {
+      if (!peerConnection) throw new Error("WebRTC not initialized");
+
+      try {
+        // Create SDP offer
+        const offer = await peerConnection.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: false
+        });
+        await peerConnection.setLocalDescription(offer);
+
+        // Send SDP offer to backend
+        await Parse.Cloud.run("sendSignalingData", {
+          sessionId: sessionId,
+          data: { type: "offer", sdp: offer.sdp }
+        });
+
+        // Send SDP offer to OpenAI
+        const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
+          method: "POST",
+          body: offer.sdp,
+          headers: {
+            Authorization: `Bearer ${clientSecret}`,
+            "Content-Type": "application/sdp"
+          }
+        });
+
+        if (!sdpResponse.ok) {
+          const errorData = await sdpResponse.json();
+          throw new Error(`OpenAI Error: ${errorData.error?.message || "Unknown error"}`);
+        }
+
+        // Set remote description from OpenAI answer
+        const answerSdp = await sdpResponse.text();
+        await peerConnection.setRemoteDescription({
+          type: "answer",
+          sdp: answerSdp
+        });
+
+        addMessage("Connection established with OpenAI");
+        return true;
+      } catch (error) {
+        console.error("Signaling Error:", error);
+        addMessage(`Signaling error: ${error.message}`, true);
+        throw error;
+      }
+    }
+
+    // Helper function to send signaling data
+    async function sendSignalingData(sessionId, data) {
+      try {
+        const result = await Parse.Cloud.run("sendSignalingData", {
+          sessionId: sessionId,
+          data: data
+        });
+        if (!result.success) {
+          throw new Error("Signaling data failed");
+        }
+      } catch (error) {
+        console.error("Signaling Error:", error);
+        throw error;
+      }
+    }
+
+    // End call function
+    function endCall() {
+      // Close media stream
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+      }
+      
+      // Close peer connection
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+      
+      // Reset UI
+      callButton.classList.remove('active');
+      callStatus.style.display = "none";
+      speechBubble.classList.add('hidden');
+      isCallActive = false;
+      
+      addMessage("Call ended");
+    }
+
+    // Toggle call
+    async function toggleCall() {
+      if (isCallActive) {
+        // End the call
+        endCall();
+      } else {
+        // Start the call
+        callButton.classList.add('active');
+        isCallActive = await startConnection();
+        if (!isCallActive) {
+          callButton.classList.remove('active');
+        }
+      }
+    }
+
+    // Event listeners
+    callButton.addEventListener('click', toggleCall);
+
+    // Cleanup
+    window.addEventListener('beforeunload', () => {
+      if (peerConnection) peerConnection.close();
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
       }
     });
   </script>
