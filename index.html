@@ -45,6 +45,7 @@
     let audioContext = null;
     let mediaStream = null;
     let audioElement = null;
+    let isAudioContextResumed = false;
 
     const callButton = document.getElementById('callButton');
     const phoneContent = document.getElementById('phoneContent');
@@ -94,6 +95,16 @@
             callStatus.style.display = "block";
             addMessage("Connection established successfully!");
             speechBubble.classList.remove('hidden');
+            
+            // Attempt to resume audio context if needed
+            if (audioContext && audioContext.state === 'suspended') {
+              audioContext.resume().then(() => {
+                console.log("Audio context resumed");
+                isAudioContextResumed = true;
+              }).catch(error => {
+                console.error("Failed to resume audio context:", error);
+              });
+            }
           } else if (peerConnection.connectionState === "disconnected" || 
                      peerConnection.connectionState === "failed") {
             endCall();
@@ -109,19 +120,24 @@
             audioElement = document.createElement("audio");
             audioElement.autoplay = true;
             audioElement.controls = true; // Add controls for debugging
+            audioElement.volume = 1.0; // Set default volume
             document.body.appendChild(audioElement);
           }
           
           // Set the source of the audio element
           audioElement.srcObject = event.streams[0];
           
-          // Resume audio context if suspended
-          if (audioContext && audioContext.state === 'suspended') {
-            audioContext.resume().then(() => {
-              console.log("Audio context resumed");
-            }).catch(error => {
-              console.error("Failed to resume audio context:", error);
-            });
+          // If audio context is suspended and we haven't resumed it yet
+          if (audioContext && audioContext.state === 'suspended' && !isAudioContextResumed) {
+            addMessage("Audio context is suspended. Please click anywhere to activate audio.");
+            document.body.addEventListener('click', () => {
+              audioContext.resume().then(() => {
+                console.log("Audio context resumed");
+                isAudioContextResumed = true;
+              }).catch(error => {
+                console.error("Failed to resume audio context:", error);
+              });
+            }, { once: true });
           }
         };
 
@@ -387,6 +403,7 @@
       document.body.addEventListener('click', () => {
         audioContext.resume().then(() => {
           console.log("Audio context resumed");
+          isAudioContextResumed = true;
         }).catch(error => {
           console.error("Failed to resume audio context:", error);
         });
