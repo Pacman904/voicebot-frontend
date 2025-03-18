@@ -1,151 +1,139 @@
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>Voice Assistant with Google Gemini</title>
-  <style>
-    body { font-family: Arial; margin: 0; padding: 20px; background: #f0f2f5; }
-    .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    #micButton { background: #10B981; width: 80px; height: 80px; border-radius: 50%; border: none; cursor: pointer; margin: 20px auto; display: block; color: white; font-size: 24px; }
-    #micButton.stop { background: #EF4444; }
-    #status { color: #059669; text-align: center; display: none; }
-    #logs { background: #1f2937; color: white; padding: 15px; border-radius: 8px; font-family: monospace; height: 200px; overflow-y: auto; }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voicebot</title>
 </head>
 <body>
-  <div class="container">
-    <div id="status">● LIVE</div>
-    <div id="logs"></div>
-    <button id="micButton" onclick="toggleConnection()">🎤</button>
-    <audio id="audioOutput" controls autoplay style="width: 100%; margin-top: 20px;"></audio>
+  <div class="phone smartphone">
+    <div class="status" id="status">Disconnected</div>
+    <button id="callButton" class="button">Start Call</button>
+    <div class="output" id="output"></div>
   </div>
-  <script src="https://unpkg.com/openai/dist/openai.min.js"></script>
+  <div class="phone nokia">
+    <div class="error" id="error"></div>
+  </div>
+
+  <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
-    const openai = new OpenAI({
-      apiKey: "AIzaSyASxQq1OC-7UOpunlp5hrjckKPq9gPUA5I", // Ersetzen Sie dies durch Ihren Google Gemini API-Schlüssel
-      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/"
-    });
+    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
+    Parse.serverURL = "https://parseapi.back4app.com/";
 
-    let peerConnection = null;
-    let mediaStream = null;
-    let dc = null;
+    let peerConnection;
+    let ws;
+    let sessionId;
+    let openaiSessionId;
 
-    function log(message) {
-      const logs = document.getElementById('logs');
-      logs.textContent += `[${new Date().toLocaleTimeString()}] ${message}\n`;
-      logs.scrollTop = logs.scrollHeight;
-    }
+    const callButton = document.getElementById("callButton");
+    const statusDiv = document.getElementById("status");
+    const outputDiv = document.getElementById("output");
+    const errorDiv = document.getElementById("error");
 
-    async function initConnection() {
+    callButton.addEventListener("click", async () => {
+      if (callButton.classList.contains("active")) {
+        // Verbindung beenden
+        if (ws) ws.close();
+        if (peerConnection) peerConnection.close();
+        callButton.classList.remove("active");
+        callButton.textContent = "Start Call";
+        statusDiv.textContent = "Disconnected";
+        outputDiv.textContent = "";
+        return;
+      }
+
       try {
-        log("Verbindung wird initialisiert...");
-        const session = await openai.realtime.sessions.create({
-          model: "gemini-2.0-flash",
+        callButton.classList.add("active");
+        callButton.textContent = "End Call";
+        statusDiv.textContent = "Connecting...";
+
+        // Session vom Backend abrufen
+        const response = await Parse.Cloud.run("createEphemeralSession", {
+          model: "gpt-4o-realtime-preview-2024-12-17",
           voice: "verse",
-          modalities: ["audio", "text"],
-          output_audio_format: "pcm16",
-          input_audio_format: "pcm16",
-          instructions: "Du bist ein hilfreicher, witziger und freundlicher KI-Assistent. Dein Wissen reicht bis Oktober 2023. Verhalte dich wie ein Mensch, aber denke daran, dass du keiner bist. Deine Stimme und Persönlichkeit sollten warm, lebhaft und verspielt sein. Sprich schnell und verwende, falls möglich, Funktionen.",
-          turn_detection: {
-            type: "server_vad",
-            threshold: 0.5,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 200,
-            create_response: true,
-            interrupt_response: true
+        });
+        sessionId = response.sessionId;
+        openaiSessionId = response.openaiSessionId;
+        const iceServers = response.iceServers;
+
+        // WebRTC-Verbindung initialisieren
+        peerConnection = new RTCPeerConnection({ iceServers });
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            console.log("ICE Candidate:", event.candidate);
           }
-        });
-
-        peerConnection = new RTCPeerConnection({
-          iceServers: session.iceServers,
-          iceTransportPolicy: "relay"
-        });
-
-        peerConnection.oniceconnectionstatechange = () => {
-          log(`ICE Connection State: ${peerConnection.iceConnectionState}`);
         };
-
-        mediaStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            sampleRate: 24000,
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true
+        peerConnection.onconnectionstatechange = () => {
+          console.log("Connection state:", peerConnection.connectionState);
+          if (peerConnection.connectionState === "connected") {
+            statusDiv.textContent = "Active Call";
           }
-        });
-
-        mediaStream.getTracks().forEach(track => {
-          peerConnection.addTrack(track, mediaStream);
-          log(`Audio-Track hinzugefügt: ${track.id}`);
-        });
-
-        peerConnection.ontrack = async (event) => {
-          log("Eingehender Medienstream erkannt");
-          const audioElement = document.getElementById('audioOutput');
-          audioElement.srcObject = event.streams[0];
-          audioElement.oncanplaythrough = () => {
-            audioElement.play().catch(err => {
-              log(`Wiedergabefehler: ${err.message}`);
-            });
-          };
+        };
+        peerConnection.ontrack = (event) => {
+          const audioEl = document.createElement("audio");
+          audioEl.autoplay = true;
+          audioEl.srcObject = event.streams[0];
+          document.body.appendChild(audioEl);
         };
 
-        dc = peerConnection.createDataChannel("oai-events");
-        dc.onopen = () => {
-          log("Datenkanal geöffnet");
+        // WebSocket-Verbindung zur OpenAI Realtime API
+        ws = new WebSocket(`wss://api.openai.com/v1/realtime/${openaiSessionId}`, {
+          headers: { "OpenAI-Beta": "realtime=v1" },
+        });
+
+        ws.onopen = () => {
+          console.log("WebSocket-Verbindung geöffnet");
+          ws.send(JSON.stringify({
+            type: "session.update",
+            session: {
+              modalities: ["audio", "text"],
+              instructions: "Du bist ein hilfreicher Voicebot.",
+            },
+          }));
         };
 
-        dc.onmessage = (event) => {
-          const message = JSON.parse(event.data);
-          log(`Nachricht empfangen: ${JSON.stringify(message)}`);
-          
-          if (message.type === "response.audio.delta") {
-            log("Audio-Delta empfangen");
-          } else if (message.type === "response.text.delta") {
-            log(`Textantwort: ${message.delta}`);
-          } else if (message.type === "response.done" && message.response.status === "failed") {
-            log(`Fehler bei der Antwort: ${JSON.stringify(message.response.status_details)}`);
+        ws.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          if (data.type === "response.text") {
+            outputDiv.textContent += `${data.text}\n`;
+          } else if (data.type === "response.audio") {
+            const audioBlob = new Blob([Buffer.from(data.audio, "base64")], { type: "audio/webm" });
+            const audioUrl = URL.createObjectURL(audioBlob);
+            new Audio(audioUrl).play();
           }
         };
 
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        
-        const answer = await openai.realtime.forwardToOpenAI({
-          clientSecret: session.clientSecret,
-          sdp: offer.sdp
-        });
-        
-        await peerConnection.setRemoteDescription(
-          new RTCSessionDescription({
-            type: 'answer',
-            sdp: answer.sdp
-          })
-        );
+        ws.onerror = (error) => {
+          errorDiv.textContent = "Verbindungsfehler zur OpenAI API";
+          console.error("WebSocket-Fehler:", error);
+        };
 
-        document.getElementById('status').style.display = 'block';
-        document.getElementById('micButton').classList.add('stop');
-        document.getElementById('micButton').textContent = '⏹️';
-        log("Verbindung erfolgreich!");
+        ws.onclose = () => {
+          statusDiv.textContent = "Disconnected";
+          callButton.classList.remove("active");
+          callButton.textContent = "Start Call";
+        };
+
+        // Audio vom Mikrofon aufnehmen und senden
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        peerConnection.addTrack(stream.getAudioTracks()[0], stream);
+
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = (event) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(event.data); // Audio an OpenAI senden
+          }
+        };
+        mediaRecorder.start(1000); // Audio alle 1 Sekunde senden
+
       } catch (error) {
-        log(`Fehler: ${error.message || JSON.stringify(error)}`);
+        errorDiv.textContent = `Fehler: ${error.message}`;
+        console.error("Fehler beim Verbindungsaufbau:", error);
+        callButton.classList.remove("active");
+        callButton.textContent = "Start Call";
+        statusDiv.textContent = "Disconnected";
       }
-    }
-
-    async function toggleConnection() {
-      const micButton = document.getElementById('micButton');
-      if (peerConnection?.connectionState === 'connected') {
-        peerConnection.close();
-        mediaStream?.getTracks().forEach(track => track.stop());
-        document.getElementById('status').style.display = 'none';
-        document.getElementById('audioOutput').srcObject = null;
-        micButton.classList.remove('stop');
-        micButton.textContent = '🎤';
-        log("Verbindung getrennt");
-      } else {
-        await initConnection();
-      }
-    }
+    });
   </script>
 </body>
 </html>
