@@ -1,18 +1,63 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Voicebot</title>
+  <title>WebRTC with OpenAI</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #f4f4f4;
+    }
+    .container {
+      text-align: center;
+      background-color: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    #onAir {
+      margin-top: 20px;
+      font-size: 24px;
+      color: green;
+      display: none;
+    }
+    #output {
+      margin-top: 20px;
+      font-size: 16px;
+      color: #333;
+    }
+    #error {
+      margin-top: 10px;
+      font-size: 14px;
+      color: red;
+      display: none;
+    }
+  </style>
 </head>
 <body>
-  <div class="phone smartphone">
-    <div class="status" id="status">Disconnected</div>
-    <button id="callButton" class="button">Start Call</button>
-    <div class="output" id="output"></div>
-  </div>
-  <div class="phone nokia">
-    <div class="error" id="error"></div>
+  <div class="container">
+    <h1>Voicebot</h1>
+    <button id="startButton">Start Connection</button>
+    <div id="onAir">CONNECTED</div>
+    <div id="output"></div>
+    <div id="error"></div>
   </div>
 
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
@@ -22,31 +67,30 @@
 
     let peerConnection;
     let ws;
+    let mediaRecorder;
+    let audioChunks = [];
     let sessionId;
     let openaiSessionId;
 
-    const callButton = document.getElementById("callButton");
-    const statusDiv = document.getElementById("status");
-    const outputDiv = document.getElementById("output");
-    const errorDiv = document.getElementById("error");
+    const startButton = document.getElementById("startButton");
+    const onAirElement = document.getElementById("onAir");
+    const outputElement = document.getElementById("output");
+    const errorElement = document.getElementById("error");
 
-    callButton.addEventListener("click", async () => {
-      if (callButton.classList.contains("active")) {
+    startButton.addEventListener("click", async () => {
+      if (startButton.textContent === "Stop Connection") {
         // Verbindung beenden
         if (ws) ws.close();
         if (peerConnection) peerConnection.close();
-        callButton.classList.remove("active");
-        callButton.textContent = "Start Call";
-        statusDiv.textContent = "Disconnected";
-        outputDiv.textContent = "";
+        if (mediaRecorder) mediaRecorder.stop();
+        startButton.textContent = "Start Connection";
+        onAirElement.style.display = "none";
+        outputElement.textContent = "";
         return;
       }
 
       try {
-        callButton.classList.add("active");
-        callButton.textContent = "End Call";
-        statusDiv.textContent = "Connecting...";
-
+        startButton.textContent = "Connecting...";
         // Session vom Backend abrufen
         const response = await Parse.Cloud.run("createEphemeralSession", {
           model: "gpt-4o-realtime-preview-2024-12-17",
@@ -66,7 +110,8 @@
         peerConnection.onconnectionstatechange = () => {
           console.log("Connection state:", peerConnection.connectionState);
           if (peerConnection.connectionState === "connected") {
-            statusDiv.textContent = "Active Call";
+            onAirElement.style.display = "block";
+            startButton.textContent = "Stop Connection";
           }
         };
         peerConnection.ontrack = (event) => {
@@ -95,7 +140,7 @@
         ws.onmessage = (event) => {
           const data = JSON.parse(event.data);
           if (data.type === "response.text") {
-            outputDiv.textContent += `${data.text}\n`;
+            outputElement.textContent += `${data.text}\n`;
           } else if (data.type === "response.audio") {
             const audioBlob = new Blob([Buffer.from(data.audio, "base64")], { type: "audio/webm" });
             const audioUrl = URL.createObjectURL(audioBlob);
@@ -104,21 +149,16 @@
         };
 
         ws.onerror = (error) => {
-          errorDiv.textContent = "Verbindungsfehler zur OpenAI API";
+          errorElement.style.display = "block";
+          errorElement.textContent = "Verbindungsfehler zur OpenAI API";
           console.error("WebSocket-Fehler:", error);
         };
 
-        ws.onclose = () => {
-          statusDiv.textContent = "Disconnected";
-          callButton.classList.remove("active");
-          callButton.textContent = "Start Call";
-        };
-
-        // Audio vom Mikrofon aufnehmen und senden
+        // Audio vom Mikrofon aufnehmen
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         peerConnection.addTrack(stream.getAudioTracks()[0], stream);
 
-        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder = new MediaRecorder(stream);
         mediaRecorder.ondataavailable = (event) => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(event.data); // Audio an OpenAI senden
@@ -127,11 +167,11 @@
         mediaRecorder.start(1000); // Audio alle 1 Sekunde senden
 
       } catch (error) {
-        errorDiv.textContent = `Fehler: ${error.message}`;
+        errorElement.style.display = "block";
+        errorElement.textContent = `Fehler: ${error.message}`;
         console.error("Fehler beim Verbindungsaufbau:", error);
-        callButton.classList.remove("active");
-        callButton.textContent = "Start Call";
-        statusDiv.textContent = "Disconnected";
+        startButton.textContent = "Start Connection";
+        onAirElement.style.display = "none";
       }
     });
   </script>
