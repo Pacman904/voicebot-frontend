@@ -276,6 +276,18 @@
               addMessage(`OpenAI Error: ${event.text}`, true);
             } else if (event.type === "status") {
               addMessage(`Status: ${event.text}`);
+            } else if (event.type === "response") {
+              // Handle audio response
+              if (event.output && event.output[0] && event.output[0].audio) {
+                const audioUrl = event.output[0].audio.url;
+                if (audioElement) {
+                  audioElement.src = audioUrl;
+                  audioElement.play().catch(error => {
+                    console.error("Error playing audio:", error);
+                    addMessage("Failed to play audio response", true);
+                  });
+                }
+              }
             }
           } catch (error) {
             console.error("Error parsing message:", error);
