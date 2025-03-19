@@ -262,6 +262,9 @@
         dataChannel.onopen = () => {
           console.log("Data channel opened");
           addMessage("Communication channel opened");
+          
+          // Send response.create message when the channel is open
+          sendResponseCreate();
         };
         
         dataChannel.onmessage = (e) => {
@@ -311,6 +314,22 @@
         console.error("WebRTC initialization error:", error);
         addMessage(`WebRTC initialization error: ${error.message}`, true);
         throw error;
+      }
+    }
+
+    // Function to send response.create message
+    function sendResponseCreate() {
+      if (dataChannel && dataChannel.readyState === "open") {
+        const message = {
+          type: "response.create",
+          response: {
+            modalities: ["text", "audio"],
+            instructions: "Respond to the user's input with both text and audio",
+          }
+        };
+        dataChannel.send(JSON.stringify(message));
+      } else {
+        console.error("Data channel not open");
       }
     }
 
