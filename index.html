@@ -321,7 +321,15 @@
     function sendResponseCreate() {
       if (dataChannel && dataChannel.readyState === "open") {
         const message = {
-          type: "response.create"
+          type: "response.create",
+          response: {
+            model: "gpt-4o-mini-realtime-preview-2024-12-17",
+            voice: "alloy",
+            parameters: {
+              temperature: 0.7,
+              max_tokens: 500
+            }
+          }
         };
         dataChannel.send(JSON.stringify(message));
       } else {
