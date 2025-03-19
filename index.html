@@ -291,6 +291,12 @@
                 console.error("Unexpected response format:", event);
                 addMessage("Received unexpected response format from OpenAI", true);
               }
+            } else if (event.type === "response.done") {
+              if (event.response.status === "failed") {
+                addMessage(`Response failed: ${event.response.status_details.error.message}`, true);
+              } else {
+                addMessage("Response completed successfully");
+              }
             } else {
               console.log("Unhandled event type:", event.type);
             }
