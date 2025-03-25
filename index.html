@@ -5,7 +5,124 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenAI Voice Assistant</title>
   <style>
-    /* [Styles remain unchanged from the original code] */
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #f4f4f4;
+      margin: 0;
+    }
+    .container {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .phone {
+      width: 300px;
+      height: 600px;
+      background-color: #111;
+      border-radius: 30px;
+      padding: 20px;
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+    .phone-screen {
+      background-color: white;
+      height: 100%;
+      border-radius: 20px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .phone-status {
+      height: 30px;
+      background-color: #f8f8f8;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      align-items: center;
+      padding: 0 15px;
+    }
+    .call-status {
+      font-size: 14px;
+      font-weight: bold;
+      color: #4CAF50;
+      display: none;
+    }
+    .phone-content {
+      flex: 1;
+      padding: 15px;
+      overflow-y: auto;
+      background-color: #f9f9f9;
+    }
+    .message-box {
+      background-color: white;
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 10px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      word-wrap: break-word;
+    }
+    .phone-bottom {
+      height: 80px;
+      background-color: #f8f8f8;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border-top: 1px solid #ddd;
+    }
+    .call-button {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background-color: #4CAF50;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    .call-button.active {
+      background-color: #f44336;
+    }
+    .call-button i {
+      color: white;
+      font-size: 24px;
+    }
+    .speech-bubble {
+      position: relative;
+      background: #ffffff;
+      border-radius: 15px;
+      padding: 20px;
+      width: 250px;
+      min-height: 100px;
+      max-height: 400px;
+      overflow-y: auto;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      display: none;
+    }
+    .speech-bubble:after {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 30px;
+      width: 0;
+      height: 0;
+      border: 15px solid transparent;
+      border-right-color: #ffffff;
+      border-left: 0;
+      margin-top: -15px;
+      margin-left: -15px;
+    }
+    .error {
+      color: #f44336;
+      font-weight: bold;
+    }
+    audio {
+      display: none;
+    }
   </style>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
 </head>
@@ -35,8 +152,8 @@
   
   <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
   <script>
-    Parse.initialize("YOUR_APP_ID", "YOUR_JAVASCRIPT_KEY");
-    Parse.serverURL = "YOUR_PARSE_SERVER_URL/";
+    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
+    Parse.serverURL = "https://parseapi.back4app.com";
 
     let peerConnection = null;
     let dataChannel = null;
@@ -119,7 +236,6 @@
             audioElement = document.createElement("audio");
             audioElement.autoplay = true;
             audioElement.volume = 1.0;
-            audioElement.controls = true; // Added for debugging
             document.body.appendChild(audioElement);
           }
           
@@ -154,10 +270,12 @@
             if (event.type === "transcript") {
               updateSpeechBubble(event.text);
             } else if (event.type === "error") {
-              addMessage(`OpenAI Error: ${event.text}`, true);
+              const errorMessage = event.error?.message || event.message || "Unknown error";
+              addMessage(`OpenAI Error: ${errorMessage}`, true);
             } else if (event.type === "status") {
               addMessage(`Status: ${event.text}`);
             } else if (event.type === "response") {
+              // Handle audio response
               if (event.output && event.output[0] && event.output[0].audio) {
                 const audioUrl = event.output[0].audio.url;
                 if (audioElement) {
@@ -284,17 +402,26 @@
       if (!peerConnection) throw new Error("WebRTC not initialized");
 
       try {
+        addMessage("Creating SDP offer...");
+        
+        // Create SDP offer
         const offer = await peerConnection.createOffer({
           offerToReceiveAudio: true,
           offerToReceiveVideo: false
         });
         await peerConnection.setLocalDescription(offer);
         
+        addMessage("Local description set, sending to server...");
+
+        // Send SDP offer to backend
         await Parse.Cloud.run("sendSignalingData", {
           sessionId: sessionId,
           data: { type: "offer", sdp: offer.sdp }
         });
         
+        addMessage("Sending SDP offer to OpenAI...");
+
+        // Send SDP offer to OpenAI
         const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
           method: "POST",
           body: offer.sdp,
@@ -317,6 +444,7 @@
         }
 
         const answerSdp = await sdpResponse.text();
+        addMessage("Got SDP answer from OpenAI, setting remote description...");
         await peerConnection.setRemoteDescription({
           type: "answer",
           sdp: answerSdp
