@@ -270,7 +270,7 @@
             if (event.type === "transcript") {
               updateSpeechBubble(event.text);
             } else if (event.type === "error") {
-              const errorMessage = event.error?.message || event.message || "Unknown error";
+              const errorMessage = event.error?.message || event.error?.param || event.message || "Unknown error";
               addMessage(`OpenAI Error: ${errorMessage}`, true);
             } else if (event.type === "status") {
               addMessage(`Status: ${event.text}`);
@@ -317,13 +317,11 @@
       if (dataChannel && dataChannel.readyState === "open") {
         const message = {
           type: "response.create",
-          response: {
-            model: "gpt-4o-mini-realtime-preview-2024-12-17",
-            voice: "alloy",
-            parameters: {
-              temperature: 0.7,
-              max_tokens: 500
-            }
+          model: "gpt-4o-mini-realtime-preview-2024-12-17",
+          voice: "alloy",
+          parameters: {
+            temperature: 0.7,
+            max_tokens: 500
           }
         };
         dataChannel.send(JSON.stringify(message));
