@@ -164,7 +164,8 @@
         let audioElement = null;
         let isAudioContextResumed = false;
         let clientSecret = null;
-        let openAIModel = "gpt-4o-mini-realtime-preview-2024-12-17"; // Corrected model name
+        let openAIModel = "gpt-4o-mini-realtime-preview-2024-12-17";
+        let audioStreamTrack = null; // Track for the audio stream
 
         const callButton = document.getElementById('callButton');
         const phoneContent = document.getElementById('phoneContent');
@@ -261,7 +262,6 @@
                 dataChannel.onopen = () => {
                     console.log("Data channel opened");
                     addMessage("Communication channel opened");
-                    
                     sendResponseCreate();
                 };
                 
@@ -275,6 +275,7 @@
                         } else if (event.type === "error") {
                             const errorMessage = event.error?.message || event.error?.param || event.message || "Unknown error";
                             addMessage(`OpenAI Error: ${errorMessage}`, true);
+                            endCall(); // End call on error
                         } else if (event.type === "status") {
                             addMessage(`Status: ${event.text}`);
                         } else if (event.type === "response") {
@@ -322,7 +323,7 @@
             if (dataChannel && dataChannel.readyState === "open") {
                 const message = {
                     type: "response.create",
-                    model: openAIModel, // Use the corrected model variable
+                    model: openAIModel,
                     voice: "alloy",
                     parameters: {
                         temperature: 0.7,
@@ -344,8 +345,12 @@
                 
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 
-                const track = mediaStream.getAudioTracks()[0];
-                peerConnection.addTrack(track, mediaStream);
+                mediaStream.getTracks().forEach(track => {
+                    if (track.kind === 'audio') {
+                        audioStreamTrack = track;
+                        peerConnection.addTrack(track, mediaStream);
+                    }
+                });
                 
                 return mediaStream;
             } catch (error) {
@@ -374,23 +379,23 @@
                 clientSecret = response.clientSecret;
 
                 if (!response.iceServers || !Array.isArray(response.iceServers)) {
-                  response.iceServers = [
-                    {
-                      urls: "stun:stun.relay.metered.ca:80",
-                    },
-                    {
-                      urls: "turn:global.relay.metered.ca:80",
-                      username: "dabe0db86808a99aa36c7309",
-                      credential: "n7sdOC9KUqBloUJ4",
-                    },
-                  ];
+                    response.iceServers = [
+                        {
+                            urls: "stun:stun.relay.metered.ca:80",
+                        },
+                        {
+                            urls: "turn:global.relay.metered.ca:80",
+                            username: "dabe0db86808a99aa36c7309",
+                            credential: "n7sdOC9KUqBloUJ4",
+                        },
+                    ];
                 }
                 
                 initializeWebRTC(response.iceServers);
 
                 await startUserMedia();
 
-                await handleSignaling(response.sessionId, response.clientSecret);
+                await handleSignaling(sessionId, clientSecret);
                 
                 return true;
             } catch (error) {
@@ -408,11 +413,11 @@
             try {
                 addMessage("Creating SDP offer...");
                 
-                // Create SDP offer
-                const offer = await peerConnection.createOffer({
+                const offerOptions = {
                     offerToReceiveAudio: true,
                     offerToReceiveVideo: false
-                });
+                };
+                const offer = await peerConnection.createOffer(offerOptions);
                 await peerConnection.setLocalDescription(offer);
                 
                 addMessage("Local description set, sending to server...");
@@ -424,10 +429,9 @@
                 });
                 
                 addMessage("Sending SDP offer to OpenAI...");
-
-                // Construct the URL with the model parameter.
+                
                 const baseUrl = "https://api.openai.com/v1/realtime";
-                const modelParam = `model=${openAIModel}`;  // Use the model variable
+                const modelParam = `model=${openAIModel}`;
                 const sdpResponse = await fetch(`${baseUrl}?${modelParam}`, {
                     method: "POST",
                     body: offer.sdp,
@@ -436,7 +440,7 @@
                         "Content-Type": "application/sdp"
                     }
                 });
-
+                
                 if (!sdpResponse.ok) {
                     const errorText = await sdpResponse.text();
                     let errorMessage = "Unknown error";
@@ -461,6 +465,7 @@
             } catch (error) {
                 console.error("Signaling Error:", error);
                 addMessage(`Signaling error: ${error.message}`, true);
+                endCall(); // End call on signaling error.
                 throw error;
             }
         }
@@ -483,6 +488,10 @@
             if (mediaStream) {
                 mediaStream.getTracks().forEach(track => track.stop());
                 mediaStream = null;
+            }
+            if (audioStreamTrack) {
+                audioStreamTrack.stop();
+                audioStreamTrack = null;
             }
             
             if (peerConnection) {
@@ -526,24 +535,26 @@
             if (mediaStream) {
                 mediaStream.getTracks().forEach(track => track.stop());
             }
-             if (audioElement) {
+            if (audioStreamTrack) {
+                audioStreamTrack.stop();
+            }
+            if (audioElement) {
                 audioElement.srcObject = null;
                 audioElement.remove();
             }
         });
-
-        // Handle audio context state
-        if (audioContext && audioContext.state === 'suspended') {
-            addMessage("Audio context is suspended. Please click anywhere to activate audio.");
-            document.body.addEventListener('click', () => {
+        
+        // Handle audio context state on first user interaction
+        document.body.addEventListener('click', () => {
+            if (audioContext && audioContext.state === 'suspended') {
                 audioContext.resume().then(() => {
-                    console.log("Audio context resumed");
-                    isAudioContextResumed = true;
+                    console.log("Audio context resumed after user interaction.");
                 }).catch(error => {
-                    console.error("Failed to resume audio context:", error);
+                    console.error("Error resuming audio context:", error);
+                    addMessage("Error activating audio. Please ensure your browser allows audio playback.", true);
                 });
-            }, { once: true });
-        }
+            }
+        }, { once: true });
     </script>
 </body>
 </html>
