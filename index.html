@@ -322,14 +322,14 @@
             if (dataChannel && dataChannel.readyState === "open") {
                 const message = {
                     type: "response.create",
-                    model: "gpt-4o-mini-realtime-preview-2024-12-17", // Use the corrected model variable
+                    model: openAIModel, // Use the corrected model variable
                     voice: "alloy",
                     parameters: {
                         temperature: 0.7,
                         max_tokens: 500
                     }
                 };
-                console.log("Sending response.create message:", message); // Add this line
+                console.log("Sending response.create message:", message);
                 dataChannel.send(JSON.stringify(message));
             } else {
                 console.error("Data channel not open");
@@ -361,7 +361,7 @@
                 addMessage("Initializing connection...");
                 
                 const response = await Parse.Cloud.run("createEphemeralSession", {
-                    model: gpt-4o-mini-realtime-preview-2024-12-17, // Use the corrected model here as well
+                    model: openAIModel,
                     voice: "alloy"
                 });
 
@@ -425,8 +425,10 @@
                 
                 addMessage("Sending SDP offer to OpenAI...");
 
-                // Send SDP offer to OpenAI
-                const sdpResponse = await fetch(`https://api.openai.com/v1/realtime`, { // Removed the model from the URL
+                // Construct the URL with the model parameter.
+                const baseUrl = "https://api.openai.com/v1/realtime";
+                const modelParam = `model=${openAIModel}`;  // Use the model variable
+                const sdpResponse = await fetch(`${baseUrl}?${modelParam}`, {
                     method: "POST",
                     body: offer.sdp,
                     headers: {
