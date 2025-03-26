@@ -194,7 +194,7 @@
         
         peerConnection.onicecandidate = async (event) => {
           if (event.candidate) {
-            console.log("ICE Candidate:", event.candidate);
+            console.log("ICE Candidate gathered:", event.candidate);
             try {
               await sendSignalingData(sessionId, {
                 type: "candidate",
@@ -204,11 +204,13 @@
               console.error("Signaling Error:", error);
               addMessage(`Signaling error: ${error.message}`, true);
             }
+          } else {
+            console.log("ICE gathering completed");
           }
         };
 
         peerConnection.onconnectionstatechange = () => {
-          console.log("Connection state:", peerConnection.connectionState);
+          console.log("Connection state changed to:", peerConnection.connectionState);
           if (peerConnection.connectionState === "connected") {
             callStatus.style.display = "block";
             addMessage("Connection established successfully!");
@@ -295,6 +297,8 @@
               } else {
                 addMessage("Response completed successfully");
               }
+            } else if (event.type === "session.created" || event.type === "session.updated") {
+              console.log(`Session ${event.type} event received`);
             } else {
               console.log("Unhandled event type:", event.type);
             }
@@ -317,7 +321,7 @@
       if (dataChannel && dataChannel.readyState === "open") {
         const message = {
           type: "response.create",
-          model: "gpt-4o-mini-realtime",
+          model: "gpt-4o-mini-realtime-preview-2024-12-17",
           voice: "alloy",
           parameters: {
             temperature: 0.7,
