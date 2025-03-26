@@ -189,16 +189,16 @@
     // Initialize WebRTC
     function initializeWebRTC(iceServers) {
       try {
-        const configuration = { iceServers };
+        const configuration = { iceServers: iceServers };
         peerConnection = new RTCPeerConnection(configuration);
         
         peerConnection.onicecandidate = async (event) => {
           if (event.candidate) {
-            console.log("ICE Candidate:", event.candidate);
+            console.log("ICE Candidate gathered:", event.candidate);
             try {
               await sendSignalingData(sessionId, {
                 type: "candidate",
-                candidate: event.candidate.candidate
+                candidate: event.candidate
               });
             } catch (error) {
               console.error("Signaling Error:", error);
@@ -208,7 +208,7 @@
         };
 
         peerConnection.onconnectionstatechange = () => {
-          console.log("Connection state:", peerConnection.connectionState);
+          console.log("Connection state changed to:", peerConnection.connectionState);
           if (peerConnection.connectionState === "connected") {
             callStatus.style.display = "block";
             addMessage("Connection established successfully!");
@@ -258,8 +258,6 @@
         dataChannel.onopen = () => {
           console.log("Data channel opened");
           addMessage("Communication channel opened");
-          
-          sendResponseCreate();
         };
         
         dataChannel.onmessage = (e) => {
@@ -275,9 +273,8 @@
             } else if (event.type === "status") {
               addMessage(`Status: ${event.text}`);
             } else if (event.type === "response") {
-              // Handle audio response
-              if (event.output && event.output[0] && event.output[0].audio) {
-                const audioUrl = event.output[0].audio.url;
+              if (event.audio) {
+                const audioUrl = event.audio;
                 if (audioElement) {
                   audioElement.src = audioUrl;
                   audioElement.play().catch(error => {
@@ -285,18 +282,7 @@
                     addMessage("Failed to play audio response", true);
                   });
                 }
-              } else {
-                console.error("Unexpected response format:", event);
-                addMessage("Received unexpected response format from OpenAI", true);
               }
-            } else if (event.type === "response.done") {
-              if (event.response.status === "failed") {
-                addMessage(`Response failed: ${event.response.status_details.error.message}`, true);
-              } else {
-                addMessage("Response completed successfully");
-              }
-            } else {
-              console.log("Unhandled event type:", event.type);
             }
           } catch (error) {
             console.error("Error parsing message:", error);
@@ -309,24 +295,6 @@
         console.error("WebRTC initialization error:", error);
         addMessage(`WebRTC initialization error: ${error.message}`, true);
         throw error;
-      }
-    }
-
-    // Function to send response.create message
-    function sendResponseCreate() {
-      if (dataChannel && dataChannel.readyState === "open") {
-        const message = {
-          type: "response.create",
-          model: "gpt-4o-mini-realtime-preview-2024-12-17",
-          voice: "alloy",
-          parameters: {
-            temperature: 0.7,
-            max_tokens: 500
-          }
-        };
-        dataChannel.send(JSON.stringify(message));
-      } else {
-        console.error("Data channel not open");
       }
     }
 
@@ -355,35 +323,19 @@
         addMessage("Initializing connection...");
         
         const response = await Parse.Cloud.run("createEphemeralSession", {
-          model: "gpt-4o-mini-realtime-preview-2024-12-17",
+          model: "gpt-4",
           voice: "alloy"
         });
 
-        if (!response || typeof response !== 'object' || !response.sessionId || !response.clientSecret) {
-          addMessage("Response dump: " + JSON.stringify(response), true);
+        if (!response || !response.sessionId || !response.clientSecret) {
           throw new Error("Invalid server response: missing required fields");
         }
         
         sessionId = response.sessionId;
         clientSecret = response.clientSecret;
 
-        if (!response.iceServers || !Array.isArray(response.iceServers)) {
-          response.iceServers = [
-            {
-              urls: "stun:stun.relay.metered.ca:80",
-            },
-            {
-              urls: "turn:global.relay.metered.ca:80",
-              username: "dabe0db86808a99aa36c7309",
-              credential: "n7sdOC9KUqBloUJ4",
-            }
-          ];
-        }
-        
         initializeWebRTC(response.iceServers);
-
         await startUserMedia();
-
         await handleSignaling(response.sessionId, response.clientSecret);
         
         return true;
@@ -402,7 +354,6 @@
       try {
         addMessage("Creating SDP offer...");
         
-        // Create SDP offer
         const offer = await peerConnection.createOffer({
           offerToReceiveAudio: true,
           offerToReceiveVideo: false
@@ -411,7 +362,6 @@
         
         addMessage("Local description set, sending to server...");
 
-        // Send SDP offer to backend
         await Parse.Cloud.run("sendSignalingData", {
           sessionId: sessionId,
           data: { type: "offer", sdp: offer.sdp }
@@ -419,8 +369,7 @@
         
         addMessage("Sending SDP offer to OpenAI...");
 
-        // Send SDP offer to OpenAI
-        const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
+        const sdpResponse = await fetch(`https://api.openai.com/v1/realtime/sessions/${sessionId}/offer`, {
           method: "POST",
           body: offer.sdp,
           headers: {
@@ -431,14 +380,7 @@
 
         if (!sdpResponse.ok) {
           const errorText = await sdpResponse.text();
-          let errorMessage = "Unknown error";
-          try {
-            const errorData = JSON.parse(errorText);
-            errorMessage = errorData.error?.message || "Unknown error";
-          } catch (e) {
-            errorMessage = errorText || "Unknown error";
-          }
-          throw new Error(`OpenAI Error: ${errorMessage}`);
+          throw new Error(`OpenAI Error: ${errorText}`);
         }
 
         const answerSdp = await sdpResponse.text();
@@ -523,19 +465,6 @@
         audioElement.remove();
       }
     });
-
-    // Handle audio context state
-    if (audioContext && audioContext.state === 'suspended') {
-      addMessage("Audio context is suspended. Please click anywhere to activate audio.");
-      document.body.addEventListener('click', () => {
-        audioContext.resume().then(() => {
-          console.log("Audio context resumed");
-          isAudioContextResumed = true;
-        }).catch(error => {
-          console.error("Failed to resume audio context:", error);
-        });
-      }, { once: true });
-    }
   </script>
 </body>
 </html>
