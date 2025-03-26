@@ -1,560 +1,545 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenAI Voice Assistant</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            background-color: #f4f4f4;
-            margin: 0;
-        }
-        .container {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-        }
-        .phone {
-            width: 300px;
-            height: 600px;
-            background-color: #111;
-            border-radius: 30px;
-            padding: 20px;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
-            position: relative;
-            overflow: hidden;
-        }
-        .phone-screen {
-            background-color: white;
-            height: 100%;
-            border-radius: 20px;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-        .phone-status {
-            height: 30px;
-            background-color: #f8f8f8;
-            border-bottom: 1px solid #ddd;
-            display: flex;
-            align-items: center;
-            padding: 0 15px;
-        }
-        .call-status {
-            font-size: 14px;
-            font-weight: bold;
-            color: #4CAF50;
-            display: none;
-        }
-        .phone-content {
-            flex: 1;
-            padding: 15px;
-            overflow-y: auto;
-            background-color: #f9f9f9;
-        }
-        .message-box {
-            background-color: white;
-            border-radius: 10px;
-            padding: 10px;
-            margin-bottom: 10px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-            word-wrap: break-word;
-        }
-        .phone-bottom {
-            height: 80px;
-            background-color: #f8f8f8;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            border-top: 1px solid #ddd;
-        }
-        .call-button {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background-color: #4CAF50;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-        .call-button.active {
-            background-color: #f44336;
-        }
-        .call-button i {
-            color: white;
-            font-size: 24px;
-        }
-        .speech-bubble {
-            position: relative;
-            background: #ffffff;
-            border-radius: 15px;
-            padding: 20px;
-            width: 250px;
-            min-height: 100px;
-            max-height: 400px;
-            overflow-y: auto;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            display: none;
-        }
-        .speech-bubble:after {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 30px;
-            width: 0;
-            height: 0;
-            border: 15px solid transparent;
-            border-right-color: #ffffff;
-            border-left: 0;
-            margin-top: -15px;
-            margin-left: -15px;
-        }
-        .error {
-            color: #f44336;
-            font-weight: bold;
-        }
-        audio {
-            display: none;
-        }
-    </style>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenAI Voice Assistant</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #f4f4f4;
+      margin: 0;
+    }
+    .container {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .phone {
+      width: 300px;
+      height: 600px;
+      background-color: #111;
+      border-radius: 30px;
+      padding: 20px;
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+    .phone-screen {
+      background-color: white;
+      height: 100%;
+      border-radius: 20px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .phone-status {
+      height: 30px;
+      background-color: #f8f8f8;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      align-items: center;
+      padding: 0 15px;
+    }
+    .call-status {
+      font-size: 14px;
+      font-weight: bold;
+      color: #4CAF50;
+      display: none;
+    }
+    .phone-content {
+      flex: 1;
+      padding: 15px;
+      overflow-y: auto;
+      background-color: #f9f9f9;
+    }
+    .message-box {
+      background-color: white;
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 10px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      word-wrap: break-word;
+    }
+    .phone-bottom {
+      height: 80px;
+      background-color: #f8f8f8;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border-top: 1px solid #ddd;
+    }
+    .call-button {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background-color: #4CAF50;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    .call-button.active {
+      background-color: #f44336;
+    }
+    .call-button i {
+      color: white;
+      font-size: 24px;
+    }
+    .speech-bubble {
+      position: relative;
+      background: #ffffff;
+      border-radius: 15px;
+      padding: 20px;
+      width: 250px;
+      min-height: 100px;
+      max-height: 400px;
+      overflow-y: auto;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      display: none;
+    }
+    .speech-bubble:after {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 30px;
+      width: 0;
+      height: 0;
+      border: 15px solid transparent;
+      border-right-color: #ffffff;
+      border-left: 0;
+      margin-top: -15px;
+      margin-left: -15px;
+    }
+    .error {
+      color: #f44336;
+      font-weight: bold;
+    }
+    audio {
+      display: none;
+    }
+  </style>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
 </head>
 <body>
-    <div class="container">
-        <div class="phone">
-            <div class="phone-screen">
-                <div class="phone-status">
-                    <div id="callStatus" class="call-status">Active Call</div>
-                </div>
-                <div id="phoneContent" class="phone-content">
-                    <div class="message-box">
-                        Ready to connect to OpenAI voice assistant. Press the green button to start.
-                    </div>
-                </div>
-                <div class="phone-bottom">
-                    <div id="callButton" class="call-button">
-                        <i class="fas fa-phone"></i>
-                    </div>
-                </div>
-            </div>
+  <div class="container">
+    <div class="phone">
+      <div class="phone-screen">
+        <div class="phone-status">
+          <div id="callStatus" class="call-status">Active Call</div>
         </div>
-        <div id="speechBubble" class="speech-bubble">
-            <p>OpenAI responses will appear here once connected.</p>
+        <div id="phoneContent" class="phone-content">
+          <div class="message-box">
+            Ready to connect to OpenAI voice assistant. Press the green button to start.
+          </div>
         </div>
+        <div class="phone-bottom">
+          <div id="callButton" class="call-button">
+            <i class="fas fa-phone"></i>
+          </div>
+        </div>
+      </div>
     </div>
-    
-    <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
-    <script>
-        Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
-        Parse.serverURL = "https://parseapi.back4app.com";
+    <div id="speechBubble" class="speech-bubble">
+      <p>OpenAI responses will appear here once connected.</p>
+    </div>
+  </div>
+  
+  <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
+  <script>
+    Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
+    Parse.serverURL = "https://parseapi.back4app.com";
 
-        let peerConnection = null;
-        let dataChannel = null;
-        let isCallActive = false;
-        let sessionId = null;
-        let audioContext = null;
-        let mediaStream = null;
-        let audioElement = null;
-        let isAudioContextResumed = false;
-        let clientSecret = null;
-        let openAIModel = "gpt-4o-mini-realtime-preview-2024-12-17";
-        let audioStreamTrack = null; // Track for the audio stream
+    let peerConnection = null;
+    let dataChannel = null;
+    let isCallActive = false;
+    let sessionId = null;
+    let audioContext = null;
+    let mediaStream = null;
+    let audioElement = null;
+    let isAudioContextResumed = false;
+    let clientSecret = null;
 
-        const callButton = document.getElementById('callButton');
-        const phoneContent = document.getElementById('phoneContent');
-        const callStatus = document.getElementById('callStatus');
-        const speechBubble = document.getElementById('speechBubble');
+    const callButton = document.getElementById('callButton');
+    const phoneContent = document.getElementById('phoneContent');
+    const callStatus = document.getElementById('callStatus');
+    const speechBubble = document.getElementById('speechBubble');
 
-        // Add a message to the phone content
-        function addMessage(message, isError = false) {
-            const messageBox = document.createElement('div');
-            messageBox.className = 'message-box';
-            if (isError) messageBox.classList.add('error');
-            messageBox.textContent = message;
-            phoneContent.appendChild(messageBox);
-            phoneContent.scrollTop = phoneContent.scrollHeight;
-        }
+    // Add a message to the phone content
+    function addMessage(message, isError = false) {
+      const messageBox = document.createElement('div');
+      messageBox.className = 'message-box';
+      if (isError) messageBox.classList.add('error');
+      messageBox.textContent = message;
+      phoneContent.appendChild(messageBox);
+      phoneContent.scrollTop = phoneContent.scrollHeight;
+    }
 
-        // Update speech bubble with AI response
-        function updateSpeechBubble(text) {
-            speechBubble.innerHTML = `<p>${text}</p>`;
+    // Update speech bubble with AI response
+    function updateSpeechBubble(text) {
+      speechBubble.innerHTML = `<p>${text}</p>`;
+      speechBubble.style.display = 'block';
+    }
+
+    // Initialize WebRTC
+    function initializeWebRTC(iceServers) {
+      try {
+        const configuration = { iceServers };
+        peerConnection = new RTCPeerConnection(configuration);
+        
+        peerConnection.onicecandidate = async (event) => {
+          if (event.candidate) {
+            console.log("ICE Candidate gathered:", event.candidate);
+            try {
+              await sendSignalingData(sessionId, {
+                type: "candidate",
+                candidate: event.candidate.candidate
+              });
+            } catch (error) {
+              console.error("Signaling Error:", error);
+              addMessage(`Signaling error: ${error.message}`, true);
+            }
+          } else {
+            console.log("ICE gathering completed");
+          }
+        };
+
+        peerConnection.onconnectionstatechange = () => {
+          console.log("Connection state changed to:", peerConnection.connectionState);
+          if (peerConnection.connectionState === "connected") {
+            callStatus.style.display = "block";
+            addMessage("Connection established successfully!");
             speechBubble.style.display = 'block';
-        }
-
-        // Initialize WebRTC
-        function initializeWebRTC(iceServers) {
-            try {
-                const configuration = { iceServers };
-                peerConnection = new RTCPeerConnection(configuration);
-                
-                peerConnection.onicecandidate = async (event) => {
-                    if (event.candidate) {
-                        console.log("ICE Candidate gathered:", event.candidate);
-                        try {
-                            await sendSignalingData(sessionId, {
-                                type: "candidate",
-                                candidate: event.candidate.toJSON()  // Convert to JSON
-                            });
-                        } catch (error) {
-                            console.error("Signaling Error:", error);
-                            addMessage(`Signaling error: ${error.message}`, true);
-                        }
-                    } else {
-                        console.log("ICE gathering completed");
-                    }
-                };
-
-                peerConnection.onconnectionstatechange = () => {
-                    console.log("Connection state changed to:", peerConnection.connectionState);
-                    if (peerConnection.connectionState === "connected") {
-                        callStatus.style.display = "block";
-                        addMessage("Connection established successfully!");
-                        speechBubble.style.display = 'block';
-                        
-                        if (audioContext && audioContext.state === 'suspended') {
-                            audioContext.resume().then(() => {
-                                console.log("Audio context resumed");
-                                isAudioContextResumed = true;
-                            }).catch(error => {
-                                console.error("Failed to resume audio context:", error);
-                            });
-                        }
-                    } else if (peerConnection.connectionState === "disconnected" ||
-                               peerConnection.connectionState === "failed") {
-                        endCall();
-                        addMessage("Connection lost or failed", true);
-                    }
-                };
-
-                peerConnection.ontrack = (event) => {
-                    console.log("Audio Track received:", event.track);
-                    
-                    if (!audioElement) {
-                        audioElement = document.createElement("audio");
-                        audioElement.autoplay = true;
-                        audioElement.volume = 1.0;
-                        document.body.appendChild(audioElement);
-                    }
-                    
-                    audioElement.srcObject = event.streams[0];
-                    
-                    if (audioContext && audioContext.state === 'suspended' && !isAudioContextResumed) {
-                        addMessage("Audio context is suspended. Please click anywhere to activate audio.");
-                        document.body.addEventListener('click', () => {
-                            audioContext.resume().then(() => {
-                                console.log("Audio context resumed");
-                                isAudioContextResumed = true;
-                            }).catch(error => {
-                                console.error("Failed to resume audio context:", error);
-                            });
-                        }, { once: true });
-                    }
-                };
-
-                dataChannel = peerConnection.createDataChannel("oai-events");
-                dataChannel.onopen = () => {
-                    console.log("Data channel opened");
-                    addMessage("Communication channel opened");
-                    sendResponseCreate();
-                };
-                
-                dataChannel.onmessage = (e) => {
-                    try {
-                        const event = JSON.parse(e.data);
-                        console.log("OpenAI Realtime Event:", event);
-                        
-                        if (event.type === "transcript") {
-                            updateSpeechBubble(event.text);
-                        } else if (event.type === "error") {
-                            const errorMessage = event.error?.message || event.error?.param || event.message || "Unknown error";
-                            addMessage(`OpenAI Error: ${errorMessage}`, true);
-                            endCall(); // End call on error
-                        } else if (event.type === "status") {
-                            addMessage(`Status: ${event.text}`);
-                        } else if (event.type === "response") {
-                            // Handle audio response
-                            if (event.output && event.output[0] && event.output[0].audio) {
-                                const audioUrl = event.output[0].audio.url;
-                                if (audioElement) {
-                                    audioElement.src = audioUrl;
-                                    audioElement.play().catch(error => {
-                                        console.error("Error playing audio:", error);
-                                        addMessage("Failed to play audio response", true);
-                                    });
-                                }
-                            } else {
-                                console.error("Unexpected response format:", event);
-                                addMessage("Received unexpected response format from OpenAI", true);
-                            }
-                        } else if (event.type === "response.done") {
-                            if (event.response.status === "failed") {
-                                addMessage(`Response failed: ${event.response.status_details.error.message}`, true);
-                            } else {
-                                addMessage("Response completed successfully");
-                            }
-                        } else if (event.type === "session.created" || event.type === "session.updated") {
-                            console.log(`Session ${event.type} event received`);
-                        } else {
-                            console.log("Unhandled event type:", event.type);
-                        }
-                    } catch (error) {
-                        console.error("Error parsing message:", error);
-                        addMessage(`Error parsing message: ${error.message}`, true);
-                    }
-                };
-
-                return peerConnection;
-            } catch (error) {
-                console.error("WebRTC initialization error:", error);
-                addMessage(`WebRTC initialization error: ${error.message}`, true);
-                throw error;
+            
+            if (audioContext && audioContext.state === 'suspended') {
+              audioContext.resume().then(() => {
+                console.log("Audio context resumed");
+                isAudioContextResumed = true;
+              }).catch(error => {
+                console.error("Failed to resume audio context:", error);
+              });
             }
-        }
+          } else if (peerConnection.connectionState === "disconnected" || 
+                     peerConnection.connectionState === "failed") {
+            endCall();
+            addMessage("Connection lost or failed", true);
+          }
+        };
 
-        // Function to send response.create message
-        function sendResponseCreate() {
-            if (dataChannel && dataChannel.readyState === "open") {
-                const message = {
-                    type: "response.create",
-                    model: openAIModel,
-                    voice: "alloy",
-                    parameters: {
-                        temperature: 0.7,
-                        max_tokens: 500
-                    }
-                };
-                console.log("Sending response.create message:", message);
-                dataChannel.send(JSON.stringify(message));
+        peerConnection.ontrack = (event) => {
+          console.log("Audio Track received:", event.track);
+          
+          if (!audioElement) {
+            audioElement = document.createElement("audio");
+            audioElement.autoplay = true;
+            audioElement.volume = 1.0;
+            document.body.appendChild(audioElement);
+          }
+          
+          audioElement.srcObject = event.streams[0];
+          
+          if (audioContext && audioContext.state === 'suspended' && !isAudioContextResumed) {
+            addMessage("Audio context is suspended. Please click anywhere to activate audio.");
+            document.body.addEventListener('click', () => {
+              audioContext.resume().then(() => {
+                console.log("Audio context resumed");
+                isAudioContextResumed = true;
+              }).catch(error => {
+                console.error("Failed to resume audio context:", error);
+              });
+            }, { once: true });
+          }
+        };
+
+        dataChannel = peerConnection.createDataChannel("oaiControlEvents");
+        dataChannel.onopen = () => {
+          console.log("Data channel opened");
+          addMessage("Communication channel opened");
+          
+          sendResponseCreate();
+        };
+        
+        dataChannel.onmessage = (e) => {
+          try {
+            const event = JSON.parse(e.data);
+            console.log("OpenAI Realtime Event:", event);
+            
+            if (event.type === "transcript") {
+              updateSpeechBubble(event.text);
+            } else if (event.type === "error") {
+              const errorMessage = event.error?.message || event.error?.param || event.message || "Unknown error";
+              addMessage(`OpenAI Error: ${errorMessage}`, true);
+            } else if (event.type === "status") {
+              addMessage(`Status: ${event.text}`);
+            } else if (event.type === "response") {
+              // Handle audio response
+              if (event.output && event.output[0] && event.output[0].audio) {
+                const audioUrl = event.output[0].audio.url;
+                if (audioElement) {
+                  audioElement.src = audioUrl;
+                  audioElement.play().catch(error => {
+                    console.error("Error playing audio:", error);
+                    addMessage("Failed to play audio response", true);
+                  });
+                }
+              } else {
+                console.error("Unexpected response format:", event);
+                addMessage("Received unexpected response format from OpenAI", true);
+              }
+            } else if (event.type === "response.done") {
+              if (event.response.status === "failed") {
+                addMessage(`Response failed: ${event.response.status_details.error.message}`, true);
+              } else {
+                addMessage("Response completed successfully");
+              }
+            } else if (event.type === "session.created" || event.type === "session.updated") {
+              console.log(`Session ${event.type} event received`);
             } else {
-                console.error("Data channel not open");
+              console.log("Unhandled event type:", event.type);
             }
+          } catch (error) {
+            console.error("Error parsing message:", error);
+            addMessage(`Error parsing message: ${error.message}`, true);
+          }
+        };
+
+        return peerConnection;
+      } catch (error) {
+        console.error("WebRTC initialization error:", error);
+        addMessage(`WebRTC initialization error: ${error.message}`, true);
+        throw error;
+      }
+    }
+
+    // Function to send response.create message
+    function sendResponseCreate() {
+      if (dataChannel && dataChannel.readyState === "open") {
+        const message = {
+          type: "response.create",
+          model: "gpt-4o-mini-realtime-preview-2024-12-17",
+          voice: "alloy",
+          parameters: {
+            temperature: 0.7,
+            max_tokens: 500
+          }
+        };
+        dataChannel.send(JSON.stringify(message));
+      } else {
+        console.error("Data channel not open");
+      }
+    }
+
+    // Start user media (microphone)
+    async function startUserMedia() {
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        addMessage("Microphone access granted");
+        
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        const track = mediaStream.getAudioTracks()[0];
+        peerConnection.addTrack(track, mediaStream);
+        
+        return mediaStream;
+      } catch (error) {
+        console.error("Media access error:", error);
+        addMessage(`Microphone access error: ${error.message}`, true);
+        throw error;
+      }
+    }
+
+    // Start connection
+    async function startConnection() {
+      try {
+        addMessage("Initializing connection...");
+        
+        const response = await Parse.Cloud.run("createEphemeralSession", {
+          model: "gpt-4o-mini-realtime-preview-2024-12-17",
+          voice: "alloy"
+        });
+
+        if (!response || typeof response !== 'object' || !response.sessionId || !response.clientSecret) {
+          addMessage("Response dump: " + JSON.stringify(response), true);
+          throw new Error("Invalid server response: missing required fields");
         }
+        
+        sessionId = response.sessionId;
+        clientSecret = response.clientSecret;
 
-        // Start user media (microphone)
-        async function startUserMedia() {
-            try {
-                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                addMessage("Microphone access granted");
-                
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                
-                mediaStream.getTracks().forEach(track => {
-                    if (track.kind === 'audio') {
-                        audioStreamTrack = track;
-                        peerConnection.addTrack(track, mediaStream);
-                    }
-                });
-                
-                return mediaStream;
-            } catch (error) {
-                console.error("Media access error:", error);
-                addMessage(`Microphone access error: ${error.message}`, true);
-                throw error;
+        if (!response.iceServers || !Array.isArray(response.iceServers)) {
+          response.iceServers = [
+            {
+              urls: "stun:stun.relay.metered.ca:80",
+            },
+            {
+              urls: "turn:global.relay.metered.ca:80",
+              username: "dabe0db86808a99aa36c7309",
+              credential: "n7sdOC9KUqBloUJ4",
             }
+          ];
         }
+        
+        initializeWebRTC(response.iceServers);
 
-        // Start connection
-        async function startConnection() {
-            try {
-                addMessage("Initializing connection...");
-                
-                const response = await Parse.Cloud.run("createEphemeralSession", {
-                    model: openAIModel,
-                    voice: "alloy"
-                });
+        await startUserMedia();
 
-                if (!response || typeof response !== 'object' || !response.sessionId || !response.clientSecret) {
-                    addMessage("Response dump: " + JSON.stringify(response), true);
-                    throw new Error("Invalid server response: missing required fields");
-                }
-                
-                sessionId = response.sessionId;
-                clientSecret = response.clientSecret;
+        await handleSignaling(response.sessionId, response.clientSecret);
+        
+        return true;
+      } catch (error) {
+        console.error("Connection Error:", error);
+        addMessage(`Connection error: ${error.message}`, true);
+        endCall();
+        return false;
+      }
+    }
 
-                if (!response.iceServers || !Array.isArray(response.iceServers)) {
-                    response.iceServers = [
-                        {
-                            urls: "stun:stun.relay.metered.ca:80",
-                        },
-                        {
-                            urls: "turn:global.relay.metered.ca:80",
-                            username: "dabe0db86808a99aa36c7309",
-                            credential: "n7sdOC9KUqBloUJ4",
-                        },
-                    ];
-                }
-                
-                initializeWebRTC(response.iceServers);
+    // Signaling logic
+    async function handleSignaling(sessionId, clientSecret) {
+      if (!peerConnection) throw new Error("WebRTC not initialized");
 
-                await startUserMedia();
+      try {
+        addMessage("Creating SDP offer...");
+        
+        // Create SDP offer
+        const offer = await peerConnection.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: false
+        });
+        await peerConnection.setLocalDescription(offer);
+        
+        addMessage("Local description set, sending to server...");
 
-                await handleSignaling(sessionId, clientSecret);
-                
-                return true;
-            } catch (error) {
-                console.error("Connection Error:", error);
-                addMessage(`Connection error: ${error.message}`, true);
-                endCall();
-                return false;
-            }
-        }
-
-        // Signaling logic
-        async function handleSignaling(sessionId, clientSecret) {
-            if (!peerConnection) throw new Error("WebRTC not initialized");
-
-            try {
-                addMessage("Creating SDP offer...");
-                
-                const offerOptions = {
-                    offerToReceiveAudio: true,
-                    offerToReceiveVideo: false
-                };
-                const offer = await peerConnection.createOffer(offerOptions);
-                await peerConnection.setLocalDescription(offer);
-                
-                addMessage("Local description set, sending to server...");
-
-                // Send SDP offer to backend
-                await Parse.Cloud.run("sendSignalingData", {
-                    sessionId: sessionId,
-                    data: { type: "offer", sdp: offer.sdp }
-                });
-                
-                addMessage("Sending SDP offer to OpenAI...");
-                
-                const baseUrl = "https://api.openai.com/v1/realtime";
-                const model = `model=${openAIModel}`;  // Corrected parameter name
-                const sdpResponse = await fetch(`${baseUrl}?${model}`, {  // Use model parameter
-                    method: "POST",
-                    body: offer.sdp,
-                    headers: {
-                        Authorization: `Bearer ${clientSecret}`,
-                        "Content-Type": "application/sdp"
-                    }
-                });
-                
-                if (!sdpResponse.ok) {
-                    const errorText = await sdpResponse.text();
-                    let errorMessage = "Unknown error";
-                    try {
-                        const errorData = JSON.parse(errorText);
-                        errorMessage = errorData.error?.message || "Unknown error";
-                    } catch (e) {
-                        errorMessage = errorText || "Unknown error";
-                    }
-                    throw new Error(`OpenAI Error: ${errorMessage}`);
-                }
-
-                const answerSdp = await sdpResponse.text();
-                addMessage("Got SDP answer from OpenAI, setting remote description...");
-                await peerConnection.setRemoteDescription({
-                    type: "answer",
-                    sdp: answerSdp
-                });
-
-                addMessage("Connection established with OpenAI");
-                return true;
-            } catch (error) {
-                console.error("Signaling Error:", error);
-                addMessage(`Signaling error: ${error.message}`, true);
-                endCall(); // End call on signaling error.
-                throw error;
-            }
-        }
-
-        // Helper function to send signaling data
-        async function sendSignalingData(sessionId, data) {
-            try {
-                await Parse.Cloud.run("sendSignalingData", {
-                    sessionId: sessionId,
-                    data: data
-                });
-            } catch (error) {
-                console.error("Signaling Error:", error);
-                throw error;
-            }
-        }
-
-        // End call function
-        function endCall() {
-            if (mediaStream) {
-                mediaStream.getTracks().forEach(track => track.stop());
-                mediaStream = null;
-            }
-            if (audioStreamTrack) {
-                audioStreamTrack.stop();
-                audioStreamTrack = null;
-            }
-            
-            if (peerConnection) {
-                peerConnection.close();
-                peerConnection = null;
-            }
-            
-            callButton.classList.remove('active');
-            callStatus.style.display = "none";
-            speechBubble.style.display = 'none';
-            isCallActive = false;
-            
-            if (audioElement) {
-                audioElement.srcObject = null;
-                audioElement.remove();
-                audioElement = null;
-            }
-            
-            addMessage("Call ended");
-        }
-
-        // Toggle call
-        async function toggleCall() {
-            if (isCallActive) {
-                endCall();
-            } else {
-                callButton.classList.add('active');
-                isCallActive = await startConnection();
-                if (!isCallActive) {
-                    callButton.classList.remove('active');
-                }
-            }
-        }
-
-        // Event listeners
-        callButton.addEventListener('click', toggleCall);
-
-        // Cleanup
-        window.addEventListener('beforeunload', () => {
-            if (peerConnection) peerConnection.close();
-            if (mediaStream) {
-                mediaStream.getTracks().forEach(track => track.stop());
-            }
-            if (audioStreamTrack) {
-                audioStreamTrack.stop();
-            }
-            if (audioElement) {
-                audioElement.srcObject = null;
-                audioElement.remove();
-            }
+        // Send SDP offer to backend
+        await Parse.Cloud.run("sendSignalingData", {
+          sessionId: sessionId,
+          data: { type: "offer", sdp: offer.sdp }
         });
         
-        // Handle audio context state on first user interaction
-        document.body.addEventListener('click', () => {
-            if (audioContext && audioContext.state === 'suspended') {
-                audioContext.resume().then(() => {
-                    console.log("Audio context resumed after user interaction.");
-                }).catch(error => {
-                    console.error("Error resuming audio context:", error);
-                    addMessage("Error activating audio. Please ensure your browser allows audio playback.", true);
-                });
-            }
-        }, { once: true });
-    </script>
+        addMessage("Sending SDP offer to OpenAI...");
+
+        // Send SDP offer to OpenAI
+        const sdpResponse = await fetch(`https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17`, {
+          method: "POST",
+          body: offer.sdp,
+          headers: {
+            Authorization: `Bearer ${clientSecret}`,
+            "Content-Type": "application/sdp"
+          }
+        });
+
+        if (!sdpResponse.ok) {
+          const errorText = await sdpResponse.text();
+          let errorMessage = "Unknown error";
+          try {
+            const errorData = JSON.parse(errorText);
+            errorMessage = errorData.error?.message || "Unknown error";
+          } catch (e) {
+            errorMessage = errorText || "Unknown error";
+          }
+          throw new Error(`OpenAI Error: ${errorMessage}`);
+        }
+
+        const answerSdp = await sdpResponse.text();
+        addMessage("Got SDP answer from OpenAI, setting remote description...");
+        await peerConnection.setRemoteDescription({
+          type: "answer",
+          sdp: answerSdp
+        });
+
+        addMessage("Connection established with OpenAI");
+        return true;
+      } catch (error) {
+        console.error("Signaling Error:", error);
+        addMessage(`Signaling error: ${error.message}`, true);
+        throw error;
+      }
+    }
+
+    // Helper function to send signaling data
+    async function sendSignalingData(sessionId, data) {
+      try {
+        await Parse.Cloud.run("sendSignalingData", {
+          sessionId: sessionId,
+          data: data
+        });
+      } catch (error) {
+        console.error("Signaling Error:", error);
+        throw error;
+      }
+    }
+
+    // End call function
+    function endCall() {
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+      }
+      
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+      
+      callButton.classList.remove('active');
+      callStatus.style.display = "none";
+      speechBubble.style.display = 'none';
+      isCallActive = false;
+      
+      if (audioElement) {
+        audioElement.srcObject = null;
+        audioElement.remove();
+        audioElement = null;
+      }
+      
+      addMessage("Call ended");
+    }
+
+    // Toggle call
+    async function toggleCall() {
+      if (isCallActive) {
+        endCall();
+      } else {
+        callButton.classList.add('active');
+        isCallActive = await startConnection();
+        if (!isCallActive) {
+          callButton.classList.remove('active');
+        }
+      }
+    }
+
+    // Event listeners
+    callButton.addEventListener('click', toggleCall);
+
+    // Cleanup
+    window.addEventListener('beforeunload', () => {
+      if (peerConnection) peerConnection.close();
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+      }
+      if (audioElement) {
+        audioElement.srcObject = null;
+        audioElement.remove();
+      }
+    });
+
+    // Handle audio context state
+    if (audioContext && audioContext.state === 'suspended') {
+      addMessage("Audio context is suspended. Please click anywhere to activate audio.");
+      document.body.addEventListener('click', () => {
+        audioContext.resume().then(() => {
+          console.log("Audio context resumed");
+          isAudioContextResumed = true;
+        }).catch(error => {
+          console.error("Failed to resume audio context:", error);
+        });
+      }, { once: true });
+    }
+  </script>
 </body>
 </html>
