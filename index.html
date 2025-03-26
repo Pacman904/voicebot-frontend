@@ -200,7 +200,7 @@
                         try {
                             await sendSignalingData(sessionId, {
                                 type: "candidate",
-                                candidate: event.candidate.candidate
+                                candidate: event.candidate.toJSON()  // Convert to JSON
                             });
                         } catch (error) {
                             console.error("Signaling Error:", error);
@@ -258,7 +258,7 @@
                     }
                 };
 
-                dataChannel = peerConnection.createDataChannel("oaiControlEvents");
+                dataChannel = peerConnection.createDataChannel("oai-events");
                 dataChannel.onopen = () => {
                     console.log("Data channel opened");
                     addMessage("Communication channel opened");
@@ -431,8 +431,8 @@
                 addMessage("Sending SDP offer to OpenAI...");
                 
                 const baseUrl = "https://api.openai.com/v1/realtime";
-                const modelParam = `model=${openAIModel}`;
-                const sdpResponse = await fetch(`${baseUrl}?${modelParam}`, {
+                const model = `model=${openAIModel}`;  // Corrected parameter name
+                const sdpResponse = await fetch(`${baseUrl}?${model}`, {  // Use model parameter
                     method: "POST",
                     body: offer.sdp,
                     headers: {
