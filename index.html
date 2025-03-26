@@ -329,6 +329,7 @@
                         max_tokens: 500
                     }
                 };
+                console.log("Sending response.create message:", message); // Add this line
                 dataChannel.send(JSON.stringify(message));
             } else {
                 console.error("Data channel not open");
