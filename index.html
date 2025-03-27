@@ -395,51 +395,23 @@
 
                 await startUserMedia();
 
-                await handleSignaling(sessionId, clientSecret);
+                //  Modified Section Start  
+                //  Refactored to match OpenAI's suggested pattern for more stable connections
+                const tokenResponse = await fetch("/session"); //  Assumes a server endpoint "/session"
+                const data = await tokenResponse.json();
+                const EPHEMERAL_KEY = data.client_secret.value;  //  Key from your server
                 
-                return true;
-            } catch (error) {
-                console.error("Connection Error:", error);
-                addMessage(`Connection error: ${error.message}`, true);
-                endCall();
-                return false;
-            }
-        }
-
-        // Signaling logic
-        async function handleSignaling(sessionId, clientSecret) {
-            if (!peerConnection) throw new Error("WebRTC not initialized");
-
-            try {
-                addMessage("Creating SDP offer...");
-                
-                const offerOptions = {
-                    offerToReceiveAudio: true,
-                    offerToReceiveVideo: false
-                };
-                const offer = await peerConnection.createOffer(offerOptions);
+                const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer);
                 
-                addMessage("Local description set, sending to server...");
-
-                // Send SDP offer to backend
-                await Parse.Cloud.run("sendSignalingData", {
-                    sessionId: sessionId,
-                    data: { type: "offer", sdp: offer.sdp }
-                });
-                
-                addMessage("Sending SDP offer to OpenAI...");
-                
                 const baseUrl = "https://api.openai.com/v1/realtime";
-                // The 'model' parameter should not be a query parameter in the fetch URL.
-                // It should be part of the 'response.create' message sent over the data channel.
-                const sdpResponse = await fetch(baseUrl, {
+                const sdpResponse = await fetch(`${baseUrl}?model=${openAIModel}`, { // Model as query parameter
                     method: "POST",
                     body: offer.sdp,
                     headers: {
-                        Authorization: `Bearer ${clientSecret}`,
+                        Authorization: `Bearer ${EPHEMERAL_KEY}`, // Use the key from your server
                         "Content-Type": "application/sdp"
-                    }
+                    },
                 });
                 
                 if (!sdpResponse.ok) {
@@ -455,21 +427,24 @@
                 }
 
                 const answerSdp = await sdpResponse.text();
-                addMessage("Got SDP answer from OpenAI, setting remote description...");
                 await peerConnection.setRemoteDescription({
                     type: "answer",
-                    sdp: answerSdp
+                    sdp: answerSdp,
                 });
-
+                //  Modified Section End 
+                
                 addMessage("Connection established with OpenAI");
                 return true;
             } catch (error) {
-                console.error("Signaling Error:", error);
-                addMessage(`Signaling error: ${error.message}`, true);
-                endCall(); // End call on signaling error.
-                throw error;
+                console.error("Connection Error:", error);
+                addMessage(`Connection error: ${error.message}`, true);
+                endCall();
+                return false;
             }
         }
+
+        // Signaling logic -  REMOVED this function
+        // async function handleSignaling(sessionId, clientSecret) { ... }
 
         // Helper function to send signaling data
         async function sendSignalingData(sessionId, data) {
