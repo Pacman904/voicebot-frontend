@@ -431,8 +431,9 @@
                 addMessage("Sending SDP offer to OpenAI...");
                 
                 const baseUrl = "https://api.openai.com/v1/realtime";
-                const model = `model=${openAIModel}`;  // Corrected parameter name
-                const sdpResponse = await fetch(`${baseUrl}?${model}`, {  // Use model parameter
+                // The 'model' parameter should not be a query parameter in the fetch URL.
+                // It should be part of the 'response.create' message sent over the data channel.
+                const sdpResponse = await fetch(baseUrl, {
                     method: "POST",
                     body: offer.sdp,
                     headers: {
