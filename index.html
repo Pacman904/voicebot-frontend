@@ -323,7 +323,7 @@
             if (dataChannel && dataChannel.readyState === "open") {
                 const message = {
                     type: "response.create",
-                    model: openAIModel,
+                    model: openAIModel, // Include the model here
                     voice: "alloy",
                     parameters: {
                         temperature: 0.7,
@@ -366,7 +366,7 @@
                 addMessage("Initializing connection...");
                 
                 const response = await Parse.Cloud.run("createEphemeralSession", {
-                    model: openAIModel,
+                    model: openAIModel, // Include the model here.
                     voice: "alloy"
                 });
 
