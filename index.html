@@ -430,15 +430,13 @@
                 
                 addMessage("Sending SDP offer to OpenAI...");
                 
-                const baseUrl = "https://api.openai.com/v1/realtime";
-                // The 'model' parameter should not be a query parameter in the fetch URL.
-                // It should be part of the 'response.create' message sent over the data channel.
-                const sdpResponse = await fetch(baseUrl, {
+                const baseUrl = "https://api.openai.com/v1/realtime/sessions"; // Corrected URL
+                const sdpResponse = await fetch(baseUrl, {  // Changed to /sessions
                     method: "POST",
-                    body: offer.sdp,
+                    body: JSON.stringify({ sdp: offer.sdp }), //  Wrap the SDP
                     headers: {
                         Authorization: `Bearer ${clientSecret}`,
-                        "Content-Type": "application/sdp"
+                        "Content-Type": "application/json"  //  Use JSON Content-Type
                     }
                 });
                 
@@ -446,7 +444,7 @@
                     const errorText = await sdpResponse.text();
                     let errorMessage = "Unknown error";
                     try {
-                        const errorData = JSON.parse(errorText);
+                        const errorData = await sdpResponse.json();
                         errorMessage = errorData.error?.message || "Unknown error";
                     } catch (e) {
                         errorMessage = errorText || "Unknown error";
@@ -454,7 +452,9 @@
                     throw new Error(`OpenAI Error: ${errorMessage}`);
                 }
 
-                const answerSdp = await sdpResponse.text();
+                const answerData = await sdpResponse.json(); // Parse as JSON
+                const answerSdp = answerData.sdp;
+                
                 addMessage("Got SDP answer from OpenAI, setting remote description...");
                 await peerConnection.setRemoteDescription({
                     type: "answer",
