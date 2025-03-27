@@ -398,24 +398,7 @@
                 //  Modified Section Start  
                 //  Refactored to match OpenAI's suggested pattern for more stable connections
                 const tokenResponse = await fetch("/session"); //  Assumes a server endpoint "/session"
-                
-                if (!tokenResponse.ok) {
-                    const errorText = await tokenResponse.text();
-                    throw new Error(`HTTP error! status: ${tokenResponse.status}, body: ${errorText}`);
-                }
-                
-                const text = await tokenResponse.text(); // Get the raw response text
-                let data;
-                try {
-                    data = JSON.parse(text); // Attempt to parse the response as JSON
-                } catch (error) {
-                    // If parsing fails, it's likely HTML, so handle it as an error
-                    console.error("Error parsing JSON:", error, "Response text:", text);
-                    addMessage("Error: Invalid response from /session endpoint.  Expected JSON, received:\n" + text, true);
-                    endCall();
-                    return false; // Stop the connection attempt
-                }
-
+                const data = await tokenResponse.json();
                 const EPHEMERAL_KEY = data.client_secret.value;  //  Key from your server
                 
                 const offer = await peerConnection.createOffer();
