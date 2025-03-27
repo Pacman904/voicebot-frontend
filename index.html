@@ -163,9 +163,9 @@
         let mediaStream = null;
         let audioElement = null;
         let isAudioContextResumed = false;
-        let clientSecret = null;
         let openAIModel = "gpt-4o-mini-realtime-preview-2024-12-17";
         let audioStreamTrack = null; // Track for the audio stream
+        let openAIKey = null;
 
         const callButton = document.getElementById('callButton');
         const phoneContent = document.getElementById('phoneContent');
@@ -377,6 +377,7 @@
                 
                 sessionId = response.sessionId;
                 clientSecret = response.clientSecret;
+                openAIKey = response.openAIKey; // Corrected variable name.
 
                 if (!response.iceServers || !Array.isArray(response.iceServers)) {
                     response.iceServers = [
@@ -430,13 +431,13 @@
                 
                 addMessage("Sending SDP offer to OpenAI...");
                 
-                const baseUrl = "https://api.openai.com/v1/realtime/sessions"; // Corrected URL
-                const sdpResponse = await fetch(baseUrl, {  // Changed to /sessions
+                const baseUrl = "https://api.openai.com/v1/realtime/sessions";
+                const sdpResponse = await fetch(baseUrl, {
                     method: "POST",
-                    body: JSON.stringify({ sdp: offer.sdp }), //  Wrap the SDP
+                    body: JSON.stringify({ sdp: offer.sdp }),
                     headers: {
-                        Authorization: `Bearer ${clientSecret}`,
-                        "Content-Type": "application/json"  //  Use JSON Content-Type
+                        Authorization: `Bearer ${clientSecret}`, // Use the clientSecret here
+                        "Content-Type": "application/json"
                     }
                 });
                 
@@ -452,7 +453,7 @@
                     throw new Error(`OpenAI Error: ${errorMessage}`);
                 }
 
-                const answerData = await sdpResponse.json(); // Parse as JSON
+                const answerData = await sdpResponse.json();
                 const answerSdp = answerData.sdp;
                 
                 addMessage("Got SDP answer from OpenAI, setting remote description...");
