@@ -164,15 +164,15 @@
         let audioElement = null;
         let isAudioContextResumed = false;
         let openAIModel = "gpt-4o-mini-realtime-preview-2024-12-17";
-        let audioStreamTrack = null; // Track for the audio stream
+        let audioStreamTrack = null;
         let openAIKey = null;
+        let clientSecret = null; // Store the client secret
 
         const callButton = document.getElementById('callButton');
         const phoneContent = document.getElementById('phoneContent');
         const callStatus = document.getElementById('callStatus');
         const speechBubble = document.getElementById('speechBubble');
 
-        // Add a message to the phone content
         function addMessage(message, isError = false) {
             const messageBox = document.createElement('div');
             messageBox.className = 'message-box';
@@ -182,13 +182,11 @@
             phoneContent.scrollTop = phoneContent.scrollHeight;
         }
 
-        // Update speech bubble with AI response
         function updateSpeechBubble(text) {
             speechBubble.innerHTML = `<p>${text}</p>`;
             speechBubble.style.display = 'block';
         }
 
-        // Initialize WebRTC
         function initializeWebRTC(iceServers) {
             try {
                 const configuration = { iceServers };
@@ -200,7 +198,7 @@
                         try {
                             await sendSignalingData(sessionId, {
                                 type: "candidate",
-                                candidate: event.candidate.toJSON()  // Convert to JSON
+                                candidate: event.candidate.toJSON()
                             });
                         } catch (error) {
                             console.error("Signaling Error:", error);
@@ -275,11 +273,10 @@
                         } else if (event.type === "error") {
                             const errorMessage = event.error?.message || event.error?.param || event.message || "Unknown error";
                             addMessage(`OpenAI Error: ${errorMessage}`, true);
-                            endCall(); // End call on error
+                            endCall();
                         } else if (event.type === "status") {
                             addMessage(`Status: ${event.text}`);
                         } else if (event.type === "response") {
-                            // Handle audio response
                             if (event.output && event.output[0] && event.output[0].audio) {
                                 const audioUrl = event.output[0].audio.url;
                                 if (audioElement) {
@@ -318,7 +315,6 @@
             }
         }
 
-        // Function to send response.create message
         function sendResponseCreate() {
             if (dataChannel && dataChannel.readyState === "open") {
                 const message = {
@@ -337,7 +333,6 @@
             }
         }
 
-        // Start user media (microphone)
         async function startUserMedia() {
             try {
                 mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -360,7 +355,6 @@
             }
         }
 
-        // Start connection
         async function startConnection() {
             try {
                 addMessage("Initializing connection...");
@@ -376,8 +370,8 @@
                 }
                 
                 sessionId = response.sessionId;
-                clientSecret = response.clientSecret;
-                openAIKey = response.openAIKey; // Corrected variable name.
+                clientSecret = response.clientSecret; // Store clientSecret
+                openAIKey = response.openAIKey;
 
                 if (!response.iceServers || !Array.isArray(response.iceServers)) {
                     response.iceServers = [
@@ -396,7 +390,7 @@
 
                 await startUserMedia();
 
-                await handleSignaling(sessionId, clientSecret);
+                await handleSignaling(sessionId, clientSecret); // Pass clientSecret
                 
                 return true;
             } catch (error) {
@@ -407,8 +401,7 @@
             }
         }
 
-        // Signaling logic
-        async function handleSignaling(sessionId, clientSecret) {
+        async function handleSignaling(sessionId, clientSecret) { // Add clientSecret parameter
             if (!peerConnection) throw new Error("WebRTC not initialized");
 
             try {
@@ -423,7 +416,6 @@
                 
                 addMessage("Local description set, sending to server...");
 
-                // Send SDP offer to backend
                 await Parse.Cloud.run("sendSignalingData", {
                     sessionId: sessionId,
                     data: { type: "offer", sdp: offer.sdp }
@@ -436,7 +428,7 @@
                     method: "POST",
                     body: JSON.stringify({ sdp: offer.sdp }),
                     headers: {
-                        Authorization: `Bearer ${clientSecret}`, // Use the clientSecret here
+                        Authorization: `Bearer ${clientSecret}`, // Use clientSecret
                         "Content-Type": "application/json"
                     }
                 });
@@ -467,12 +459,11 @@
             } catch (error) {
                 console.error("Signaling Error:", error);
                 addMessage(`Signaling error: ${error.message}`, true);
-                endCall(); // End call on signaling error.
+                endCall();
                 throw error;
             }
         }
 
-        // Helper function to send signaling data
         async function sendSignalingData(sessionId, data) {
             try {
                 await Parse.Cloud.run("sendSignalingData", {
@@ -485,7 +476,6 @@
             }
         }
 
-        // End call function
         function endCall() {
             if (mediaStream) {
                 mediaStream.getTracks().forEach(track => track.stop());
@@ -515,7 +505,6 @@
             addMessage("Call ended");
         }
 
-        // Toggle call
         async function toggleCall() {
             if (isCallActive) {
                 endCall();
@@ -528,10 +517,8 @@
             }
         }
 
-        // Event listeners
         callButton.addEventListener('click', toggleCall);
 
-        // Cleanup
         window.addEventListener('beforeunload', () => {
             if (peerConnection) peerConnection.close();
             if (mediaStream) {
@@ -546,7 +533,6 @@
             }
         });
         
-        // Handle audio context state on first user interaction
         document.body.addEventListener('click', () => {
             if (audioContext && audioContext.state === 'suspended') {
                 audioContext.resume().then(() => {
