@@ -163,7 +163,7 @@
         let mediaStream = null;
         let audioElement = null;
         let isAudioContextResumed = false;
-        let openAIModel = "gpt-4o-mini-realtime-preview-2024-12-17";
+        let openAIModel = "gpt-4o-realtime-preview-2024-12-17";
         let audioStreamTrack = null;
         let openAIKey = null;
         let clientSecret = null; // Store the client secret
@@ -251,6 +251,7 @@
                                 isAudioContextResumed = true;
                             }).catch(error => {
                                 console.error("Failed to resume audio context:", error);
+                                addMessage("Error activating audio. Please ensure your browser allows audio playback.", true);
                             });
                         }, { once: true });
                     }
@@ -370,7 +371,7 @@
                 }
                 
                 sessionId = response.sessionId;
-                clientSecret = response.clientSecret; // Store clientSecret
+                clientSecret = response.clientSecret;
                 openAIKey = response.openAIKey;
 
                 if (!response.iceServers || !Array.isArray(response.iceServers)) {
@@ -390,8 +391,8 @@
 
                 await startUserMedia();
 
-                await handleSignaling(sessionId, clientSecret); // Pass clientSecret
-                
+                await handleSignaling(sessionId, clientSecret);
+
                 return true;
             } catch (error) {
                 console.error("Connection Error:", error);
@@ -401,7 +402,7 @@
             }
         }
 
-        async function handleSignaling(sessionId, clientSecret) { // Add clientSecret parameter
+        async function handleSignaling(sessionId, clientSecret) {
             if (!peerConnection) throw new Error("WebRTC not initialized");
 
             try {
@@ -416,19 +417,12 @@
                 
                 addMessage("Local description set, sending to server...");
 
-                await Parse.Cloud.run("sendSignalingData", {
-                    sessionId: sessionId,
-                    data: { type: "offer", sdp: offer.sdp }
-                });
-                
-                addMessage("Sending SDP offer to OpenAI...");
-                
                 const baseUrl = "https://api.openai.com/v1/realtime/sessions";
                 const sdpResponse = await fetch(baseUrl, {
                     method: "POST",
                     body: JSON.stringify({ sdp: offer.sdp }),
                     headers: {
-                        Authorization: `Bearer ${clientSecret}`, // Use clientSecret
+                        Authorization: `Bearer ${clientSecret}`,
                         "Content-Type": "application/json"
                     }
                 });
@@ -438,7 +432,7 @@
                     let errorMessage = "Unknown error";
                     try {
                         const errorData = await sdpResponse.json();
-                        errorMessage = errorData.error?.message || "Unknown error";
+                        errorMessage = errorData.error?.message || errorData.message || "Unknown error";
                     } catch (e) {
                         errorMessage = errorText || "Unknown error";
                     }
@@ -446,13 +440,11 @@
                 }
 
                 const answerData = await sdpResponse.json();
-                const answerSdp = answerData.sdp;
-                
-                addMessage("Got SDP answer from OpenAI, setting remote description...");
-                await peerConnection.setRemoteDescription({
+                const answer = {
                     type: "answer",
-                    sdp: answerSdp
-                });
+                    sdp: answerData.sdp
+                };
+                await peerConnection.setRemoteDescription(answer);
 
                 addMessage("Connection established with OpenAI");
                 return true;
