@@ -305,7 +305,7 @@
                 console.log("[WebRTC] Connecting with client secret");
                 
                 // The key fix: Using the correct endpoint format for WebRTC connection
-                const response = await fetch(`https://api.openai.com/v1/realtime/sessions/${state.currentSession.sessionId}/connect`, {
+                const response = await fetch(`https://api.openai.com/v1/realtime/sessions/${state.currentSession.sessionId}`, {
                     method: "POST",
                     headers: {
                         "Authorization": `Bearer ${clientSecret}`,
