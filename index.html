@@ -149,8 +149,7 @@
             <p>OpenAI responses will appear here once connected.</p>
         </div>
     </div>
-    
-    <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
+      <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
     <script>
         // Configuration
         const CONFIG = {
@@ -294,18 +293,19 @@
             }
         }
 
-        async function connectToOpenAI(clientSecret) {
+        async function establishWebRTCConnection(clientSecret) {
             try {
-                console.log("[OpenAI] Creating SDP offer");
+                console.log("[WebRTC] Creating SDP offer");
                 const offer = await state.peerConnection.createOffer({
                     offerToReceiveAudio: true,
                     offerToReceiveVideo: false
                 });
                 await state.peerConnection.setLocalDescription(offer);
 
-                console.log("[OpenAI] Connecting with clientSecret:", clientSecret.substring(0, 10) + "...");
+                console.log("[WebRTC] Connecting with client secret");
                 
-                const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
+                // The key fix: Using the correct endpoint format for WebRTC connection
+                const response = await fetch(`https://api.openai.com/v1/realtime/sessions/${state.currentSession.sessionId}/connect`, {
                     method: "POST",
                     headers: {
                         "Authorization": `Bearer ${clientSecret}`,
@@ -313,29 +313,28 @@
                     },
                     body: JSON.stringify({
                         sdp: offer.sdp,
-                        model: CONFIG.openAIModel,
-                        voice: CONFIG.openAIVoice
+                        type: "offer"
                     })
                 });
 
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({}));
-                    console.error("[OpenAI] API Error:", errorData);
-                    throw new Error(errorData.error?.message || "OpenAI connection failed");
+                    console.error("[WebRTC] Connection Error:", errorData);
+                    throw new Error(errorData.error?.message || "WebRTC connection failed");
                 }
 
                 const answerData = await response.json();
-                console.log("[OpenAI] Received answer:", answerData);
+                console.log("[WebRTC] Received answer:", answerData);
                 
                 await state.peerConnection.setRemoteDescription({
                     type: "answer",
                     sdp: answerData.sdp
                 });
 
-                displayMessage("Connected to OpenAI");
+                displayMessage("WebRTC connection established");
                 return true;
             } catch (error) {
-                console.error("[OpenAI] Connection error:", error);
+                console.error("[WebRTC] Connection error:", error);
                 throw error;
             }
         }
@@ -375,7 +374,7 @@
                 // Initialize WebRTC
                 await initializeWebRTC(sessionData.iceServers);
                 await setupMedia();
-                await connectToOpenAI(sessionData.clientSecret);
+                await establishWebRTCConnection(sessionData.clientSecret);
 
             } catch (error) {
                 console.error("[App] Connection error:", error);
