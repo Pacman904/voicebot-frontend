@@ -149,8 +149,7 @@
             <p>OpenAI responses will appear here once connected.</p>
         </div>
     </div>
-    
-    <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
+        <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
     <script>
         // Initialize Parse
         Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
@@ -180,6 +179,7 @@
 
         // Utility functions
         function displayMessage(text, isError = false) {
+            console.log(`[UI] ${isError ? 'Error:' : 'Message:'} ${text}`);
             const messageElement = document.createElement('div');
             messageElement.className = `message-box ${isError ? 'error' : ''}`;
             messageElement.textContent = text;
@@ -196,23 +196,26 @@
             try {
                 displayMessage("Initializing connection...");
                 
-                // Get ephemeral key from backend
+                // Get session data from backend
+                console.log("Requesting ephemeral session from backend");
                 const sessionData = await Parse.Cloud.run("createEphemeralSession", {
                     model: MODEL,
                     voice: VOICE
                 });
 
-                if (!sessionData?.clientSecret) {
-                    throw new Error("Failed to get client secret from server");
+                console.log("Received session data:", sessionData);
+
+                // Validate response structure
+                if (!sessionData?.success || !sessionData.clientSecret) {
+                    console.error("Invalid session data received:", sessionData);
+                    throw new Error("Invalid response from server");
                 }
 
                 state.clientSecret = sessionData.clientSecret;
 
                 // Create peer connection with ICE servers
                 state.peerConnection = new RTCPeerConnection({
-                    iceServers: sessionData.iceServers || [
-                        { urls: "stun:stun.l.google.com:19302" }
-                    ]
+                    iceServers: sessionData.iceServers
                 });
 
                 // Set up remote audio
@@ -234,6 +237,7 @@
                 state.dataChannel.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
+                        console.log("Received event:", data);
                         if (data.type === "transcript") {
                             updateSpeechBubble(data.text);
                         }
@@ -247,6 +251,7 @@
                 await state.peerConnection.setLocalDescription(offer);
 
                 // Connect to OpenAI with ephemeral key
+                console.log("Connecting to OpenAI with client secret");
                 const baseUrl = "https://api.openai.com/v1/realtime";
                 const sdpResponse = await fetch(`${baseUrl}?model=${MODEL}`, {
                     method: "POST",
@@ -258,7 +263,8 @@
                 });
 
                 if (!sdpResponse.ok) {
-                    const errorData = await sdpResponse.json();
+                    const errorData = await sdpResponse.json().catch(() => ({}));
+                    console.error("OpenAI Connection Error:", errorData);
                     throw new Error(errorData.error?.message || "Failed to connect to OpenAI");
                 }
 
