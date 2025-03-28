@@ -149,157 +149,187 @@
             <p>OpenAI responses will appear here once connected.</p>
         </div>
     </div>
-    <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
+     <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
     <script>
+        // Initialize Parse
         Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
         Parse.serverURL = "https://parseapi.back4app.com";
 
-        let peerConnection = null;
-        let dataChannel = null;
-        let isCallActive = false;
-        let sessionId = null;
-        let audioContext = null;
-        let mediaStream = null;
-        let audioElement = null;
-        let isAudioContextResumed = false;
-        let openAIModel = "gpt-4o-realtime-preview-2024-12-17";
-        let audioStreamTrack = null;
-        let clientSecret = null;
+        // State management
+        const state = {
+            peerConnection: null,
+            dataChannel: null,
+            isCallActive: false,
+            sessionId: null,
+            audioContext: null,
+            mediaStream: null,
+            audioElement: null,
+            audioStreamTrack: null,
+            clientSecret: null,
+            openAIModel: "gpt-4o-realtime-preview-2024-12-17"
+        };
 
-        const callButton = document.getElementById('callButton');
-        const phoneContent = document.getElementById('phoneContent');
-        const callStatus = document.getElementById('callStatus');
-        const speechBubble = document.getElementById('speechBubble');
+        // DOM elements
+        const elements = {
+            callButton: document.getElementById('callButton'),
+            phoneContent: document.getElementById('phoneContent'),
+            callStatus: document.getElementById('callStatus'),
+            speechBubble: document.getElementById('speechBubble')
+        };
 
+        // Utility functions
         function addMessage(message, isError = false) {
             const messageBox = document.createElement('div');
             messageBox.className = 'message-box';
             if (isError) messageBox.classList.add('error');
             messageBox.textContent = message;
-            phoneContent.appendChild(messageBox);
-            phoneContent.scrollTop = phoneContent.scrollHeight;
+            elements.phoneContent.appendChild(messageBox);
+            elements.phoneContent.scrollTop = elements.phoneContent.scrollHeight;
         }
 
         function updateSpeechBubble(text) {
-            speechBubble.innerHTML = `<p>${text}</p>`;
-            speechBubble.style.display = 'block';
+            elements.speechBubble.innerHTML = `<p>${text}</p>`;
+            elements.speechBubble.style.display = 'block';
         }
 
         function initializeWebRTC(iceServers) {
             try {
                 const configuration = { iceServers };
-                peerConnection = new RTCPeerConnection(configuration);
+                state.peerConnection = new RTCPeerConnection(configuration);
                 
-                peerConnection.onicecandidate = async (event) => {
+                // ICE Candidate handling
+                state.peerConnection.onicecandidate = (event) => {
                     if (event.candidate) {
-                        console.log("ICE Candidate gathered:", event.candidate);
+                        console.log("ICE Candidate:", event.candidate);
                     }
                 };
 
-                peerConnection.onconnectionstatechange = () => {
-                    console.log("Connection state changed to:", peerConnection.connectionState);
-                    if (peerConnection.connectionState === "connected") {
-                        callStatus.style.display = "block";
-                        addMessage("Connection established successfully!");
-                        speechBubble.style.display = 'block';
-                        
-                        if (audioContext && audioContext.state === 'suspended') {
-                            audioContext.resume().then(() => {
-                                console.log("Audio context resumed");
-                                isAudioContextResumed = true;
-                            }).catch(error => {
-                                console.error("Failed to resume audio context:", error);
-                            });
-                        }
-                    } else if (peerConnection.connectionState === "disconnected" ||
-                               peerConnection.connectionState === "failed") {
-                        endCall();
-                        addMessage("Connection lost or failed", true);
+                // Connection state handling
+                state.peerConnection.onconnectionstatechange = () => {
+                    console.log("Connection state:", state.peerConnection.connectionState);
+                    switch(state.peerConnection.connectionState) {
+                        case "connected":
+                            elements.callStatus.style.display = "block";
+                            addMessage("Connection established!");
+                            break;
+                        case "disconnected":
+                        case "failed":
+                            endCall();
+                            addMessage("Connection lost", true);
+                            break;
                     }
                 };
 
-                peerConnection.ontrack = (event) => {
-                    console.log("Audio Track received:", event.track);
-                    
-                    if (!audioElement) {
-                        audioElement = document.createElement("audio");
-                        audioElement.autoplay = true;
-                        audioElement.volume = 1.0;
-                        document.body.appendChild(audioElement);
+                // Audio track handling
+                state.peerConnection.ontrack = (event) => {
+                    if (!state.audioElement) {
+                        state.audioElement = document.createElement("audio");
+                        state.audioElement.autoplay = true;
+                        document.body.appendChild(state.audioElement);
                     }
-                    
-                    audioElement.srcObject = event.streams[0];
+                    state.audioElement.srcObject = event.streams[0];
                 };
 
-                dataChannel = peerConnection.createDataChannel("oai-events");
-                dataChannel.onopen = () => {
+                // Data channel setup
+                state.dataChannel = state.peerConnection.createDataChannel("oai-events");
+                state.dataChannel.onopen = () => {
+                    addMessage("Data channel ready");
                     console.log("Data channel opened");
-                    addMessage("Communication channel opened");
                 };
                 
-                dataChannel.onmessage = (e) => {
+                state.dataChannel.onmessage = (event) => {
                     try {
-                        const event = JSON.parse(e.data);
-                        console.log("OpenAI Realtime Event:", event);
+                        const data = JSON.parse(event.data);
+                        console.log("OpenAI Event:", data);
                         
-                        if (event.type === "transcript") {
-                            updateSpeechBubble(event.text);
-                        } else if (event.type === "error") {
-                            const errorMessage = event.error?.message || event.error?.param || event.message || "Unknown error";
-                            addMessage(`OpenAI Error: ${errorMessage}`, true);
-                            endCall();
-                        } else if (event.type === "status") {
-                            addMessage(`Status: ${event.text}`);
-                        } else if (event.type === "response") {
-                            if (event.output && event.output[0] && event.output[0].audio) {
-                                const audioUrl = event.output[0].audio.url;
-                                if (audioElement) {
-                                    audioElement.src = audioUrl;
-                                    audioElement.play().catch(error => {
-                                        console.error("Error playing audio:", error);
-                                        addMessage("Failed to play audio response", true);
-                                    });
-                                }
-                            }
-                        } else if (event.type === "response.done") {
-                            if (event.response.status === "failed") {
-                                addMessage(`Response failed: ${event.response.status_details.error.message}`, true);
-                            } else {
-                                addMessage("Response completed successfully");
-                            }
+                        if (data.type === "transcript") {
+                            updateSpeechBubble(data.text);
+                        } else if (data.type === "error") {
+                            handleOpenAIError(data);
                         }
                     } catch (error) {
                         console.error("Error parsing message:", error);
-                        addMessage(`Error parsing message: ${error.message}`, true);
                     }
                 };
 
-                return peerConnection;
+                return state.peerConnection;
             } catch (error) {
-                console.error("WebRTC initialization error:", error);
-                addMessage(`WebRTC initialization error: ${error.message}`, true);
+                console.error("WebRTC Error:", error);
                 throw error;
             }
         }
 
+        function handleOpenAIError(errorData) {
+            const errorMessage = errorData.error?.message || 
+                              errorData.message || 
+                              "Unknown OpenAI error";
+            addMessage(`Error: ${errorMessage}`, true);
+            endCall();
+        }
+
         async function startUserMedia() {
             try {
-                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                addMessage("Microphone access granted");
+                state.mediaStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: true, 
+                    video: false 
+                });
                 
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 
-                mediaStream.getTracks().forEach(track => {
+                // Add audio track to peer connection
+                state.mediaStream.getTracks().forEach(track => {
                     if (track.kind === 'audio') {
-                        audioStreamTrack = track;
-                        peerConnection.addTrack(track, mediaStream);
+                        state.audioStreamTrack = track;
+                        state.peerConnection.addTrack(track, state.mediaStream);
                     }
                 });
                 
-                return mediaStream;
+                addMessage("Microphone ready");
+                return true;
             } catch (error) {
-                console.error("Media access error:", error);
-                addMessage(`Microphone access error: ${error.message}`, true);
+                console.error("Media Error:", error);
+                addMessage(`Media Error: ${error.message}`, true);
+                throw error;
+            }
+        }
+
+        async function establishOpenAIConnection() {
+            try {
+                // Create and set local description
+                const offer = await state.peerConnection.createOffer({
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: false
+                });
+                await state.peerConnection.setLocalDescription(offer);
+
+                // Connect to OpenAI with the ephemeral key
+                const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${state.clientSecret}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        sdp: offer.sdp,
+                        model: state.openAIModel
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error?.message || "OpenAI connection failed");
+                }
+
+                const answerData = await response.json();
+                await state.peerConnection.setRemoteDescription({
+                    type: "answer",
+                    sdp: answerData.sdp
+                });
+
+                addMessage("Connected to OpenAI");
+                return true;
+            } catch (error) {
+                console.error("OpenAI Connection Error:", error);
                 throw error;
             }
         }
@@ -308,128 +338,90 @@
             try {
                 addMessage("Initializing connection...");
                 
-                const response = await Parse.Cloud.run("createEphemeralSession", {
-                    model: openAIModel,
+                // Get session data from backend
+                const sessionData = await Parse.Cloud.run("createEphemeralSession", {
+                    model: state.openAIModel,
                     voice: "alloy"
                 });
 
-                if (!response || typeof response !== 'object' || !response.sessionId || !response.clientSecret) {
-                    addMessage("Response dump: " + JSON.stringify(response), true);
-                    throw new Error("Invalid server response: missing required fields");
+                if (!sessionData?.clientSecret) {
+                    throw new Error("Invalid session data from server");
                 }
-                
-                sessionId = response.sessionId;
-                clientSecret = response.clientSecret;
 
-                initializeWebRTC(response.iceServers);
+                state.sessionId = sessionData.sessionId;
+                state.clientSecret = sessionData.clientSecret;
+
+                // Initialize WebRTC
+                initializeWebRTC(sessionData.iceServers);
                 await startUserMedia();
+                await establishOpenAIConnection();
 
-                // Create and set local description
-                const offer = await peerConnection.createOffer({
-                    offerToReceiveAudio: true,
-                    offerToReceiveVideo: false
-                });
-                await peerConnection.setLocalDescription(offer);
-
-                // Connect to OpenAI Realtime API using the clientSecret
-                const sdpResponse = await fetch("https://api.openai.com/v1/realtime/sessions", {
-                    method: "POST",
-                    headers: {
-                        "Authorization": `Bearer ${clientSecret}`,
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        sdp: offer.sdp,
-                        model: openAIModel
-                    })
-                });
-
-                if (!sdpResponse.ok) {
-                    const errorText = await sdpResponse.text();
-                    throw new Error(`OpenAI Error: ${errorText}`);
-                }
-
-                const answerData = await sdpResponse.json();
-                const answer = {
-                    type: "answer",
-                    sdp: answerData.sdp
-                };
-                await peerConnection.setRemoteDescription(answer);
-
-                addMessage("Connection established with OpenAI");
                 return true;
             } catch (error) {
                 console.error("Connection Error:", error);
-                addMessage(`Connection error: ${error.message}`, true);
+                addMessage(`Connection failed: ${error.message}`, true);
                 endCall();
                 return false;
             }
         }
 
         function endCall() {
-            if (mediaStream) {
-                mediaStream.getTracks().forEach(track => track.stop());
-                mediaStream = null;
-            }
-            if (audioStreamTrack) {
-                audioStreamTrack.stop();
-                audioStreamTrack = null;
+            // Clean up media streams
+            if (state.mediaStream) {
+                state.mediaStream.getTracks().forEach(track => track.stop());
+                state.mediaStream = null;
             }
             
-            if (peerConnection) {
-                peerConnection.close();
-                peerConnection = null;
+            if (state.audioStreamTrack) {
+                state.audioStreamTrack.stop();
+                state.audioStreamTrack = null;
             }
             
-            callButton.classList.remove('active');
-            callStatus.style.display = "none";
-            speechBubble.style.display = 'none';
-            isCallActive = false;
-            
-            if (audioElement) {
-                audioElement.srcObject = null;
-                audioElement.remove();
-                audioElement = null;
+            // Clean up WebRTC connection
+            if (state.peerConnection) {
+                state.peerConnection.close();
+                state.peerConnection = null;
             }
+            
+            // Clean up audio element
+            if (state.audioElement) {
+                state.audioElement.pause();
+                state.audioElement.srcObject = null;
+                state.audioElement.remove();
+                state.audioElement = null;
+            }
+            
+            // Reset UI
+            elements.callButton.classList.remove('active');
+            elements.callStatus.style.display = "none";
+            elements.speechBubble.style.display = 'none';
+            state.isCallActive = false;
             
             addMessage("Call ended");
         }
 
         async function toggleCall() {
-            if (isCallActive) {
+            if (state.isCallActive) {
                 endCall();
             } else {
-                callButton.classList.add('active');
-                isCallActive = await startConnection();
-                if (!isCallActive) {
-                    callButton.classList.remove('active');
+                elements.callButton.classList.add('active');
+                state.isCallActive = await startConnection();
+                if (!state.isCallActive) {
+                    elements.callButton.classList.remove('active');
                 }
             }
         }
 
-        callButton.addEventListener('click', toggleCall);
+        // Event listeners
+        elements.callButton.addEventListener('click', toggleCall);
 
-        window.addEventListener('beforeunload', () => {
-            if (peerConnection) peerConnection.close();
-            if (mediaStream) {
-                mediaStream.getTracks().forEach(track => track.stop());
-            }
-            if (audioStreamTrack) {
-                audioStreamTrack.stop();
-            }
-            if (audioElement) {
-                audioElement.srcObject = null;
-                audioElement.remove();
-            }
-        });
+        window.addEventListener('beforeunload', endCall);
         
-        document.body.addEventListener('click', () => {
-            if (audioContext && audioContext.state === 'suspended') {
-                audioContext.resume().then(() => {
-                    console.log("Audio context resumed after user interaction.");
-                }).catch(error => {
-                    console.error("Error resuming audio context:", error);
-                    addMessage("Error activating audio. Please ensure your browser allows audio playback.", true);
+        // Audio context resume handler
+        document.addEventListener('click', () => {
+            if (state.audioContext && state.audioContext.state === 'suspended') {
+                state.audioContext.resume().then(() => {
+                    console.log("Audio context resumed");
                 });
             }
         }, { once: true });
