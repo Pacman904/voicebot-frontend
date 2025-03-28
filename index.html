@@ -191,6 +191,8 @@
         // WebRTC setup
         async function setupWebRTCConnection(iceServers, clientSecret) {
             try {
+                console.log("Initializing WebRTC with clientSecret:", clientSecret);
+                
                 // Initialize PeerConnection
                 appState.peerConnection = new RTCPeerConnection({ iceServers });
                 
@@ -265,6 +267,8 @@
                 });
                 await appState.peerConnection.setLocalDescription(offer);
 
+                console.log("Sending offer to OpenAI with clientSecret:", clientSecret);
+                
                 // Connect to OpenAI with the ephemeral key
                 const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
                     method: "POST",
@@ -274,16 +278,20 @@
                     },
                     body: JSON.stringify({
                         sdp: offer.sdp,
-                        model: "gpt-4o-realtime-preview-2024-12-17"
+                        model: "gpt-4o-realtime-preview-2024-12-17",
+                        voice: "alloy"
                     })
                 });
 
                 if (!response.ok) {
-                    const errorData = await response.json();
+                    const errorData = await response.json().catch(() => ({}));
+                    console.error("OpenAI API Error:", errorData);
                     throw new Error(errorData.error?.message || "Failed to establish OpenAI connection");
                 }
 
                 const answerData = await response.json();
+                console.log("Received answer from OpenAI:", answerData);
+                
                 await appState.peerConnection.setRemoteDescription({
                     type: "answer",
                     sdp: answerData.sdp
@@ -353,6 +361,8 @@
                     model: "gpt-4o-realtime-preview-2024-12-17",
                     voice: "alloy"
                 });
+
+                console.log("Received session data from backend:", sessionData);
 
                 if (!sessionData?.success || !sessionData.clientSecret) {
                     throw new Error("Invalid session data from server");
