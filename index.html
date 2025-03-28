@@ -149,7 +149,6 @@
             <p>OpenAI responses will appear here once connected.</p>
         </div>
     </div>
-    
     <script src="https://unpkg.com/parse/dist/parse.min.js"></script>
     <script>
         Parse.initialize("uNEbQKjymSX8qmK9gorQNRbSuaV23eMHriF2Yeoi", "NY08Fa7grB4I1AOOcrjKN2b9w6sWke5GCA8rpxBM");
@@ -165,8 +164,7 @@
         let isAudioContextResumed = false;
         let openAIModel = "gpt-4o-realtime-preview-2024-12-17";
         let audioStreamTrack = null;
-        let openAIKey = null;
-        let clientSecret = null; // Store the client secret
+        let clientSecret = null;
 
         const callButton = document.getElementById('callButton');
         const phoneContent = document.getElementById('phoneContent');
@@ -195,17 +193,6 @@
                 peerConnection.onicecandidate = async (event) => {
                     if (event.candidate) {
                         console.log("ICE Candidate gathered:", event.candidate);
-                        try {
-                            await sendSignalingData(sessionId, {
-                                type: "candidate",
-                                candidate: event.candidate.toJSON()
-                            });
-                        } catch (error) {
-                            console.error("Signaling Error:", error);
-                            addMessage(`Signaling error: ${error.message}`, true);
-                        }
-                    } else {
-                        console.log("ICE gathering completed");
                     }
                 };
 
@@ -242,26 +229,12 @@
                     }
                     
                     audioElement.srcObject = event.streams[0];
-                    
-                    if (audioContext && audioContext.state === 'suspended' && !isAudioContextResumed) {
-                        addMessage("Audio context is suspended. Please click anywhere to activate audio.");
-                        document.body.addEventListener('click', () => {
-                            audioContext.resume().then(() => {
-                                console.log("Audio context resumed");
-                                isAudioContextResumed = true;
-                            }).catch(error => {
-                                console.error("Failed to resume audio context:", error);
-                                addMessage("Error activating audio. Please ensure your browser allows audio playback.", true);
-                            });
-                        }, { once: true });
-                    }
                 };
 
                 dataChannel = peerConnection.createDataChannel("oai-events");
                 dataChannel.onopen = () => {
                     console.log("Data channel opened");
                     addMessage("Communication channel opened");
-                    sendResponseCreate();
                 };
                 
                 dataChannel.onmessage = (e) => {
@@ -287,9 +260,6 @@
                                         addMessage("Failed to play audio response", true);
                                     });
                                 }
-                            } else {
-                                console.error("Unexpected response format:", event);
-                                addMessage("Received unexpected response format from OpenAI", true);
                             }
                         } else if (event.type === "response.done") {
                             if (event.response.status === "failed") {
@@ -297,10 +267,6 @@
                             } else {
                                 addMessage("Response completed successfully");
                             }
-                        } else if (event.type === "session.created" || event.type === "session.updated") {
-                            console.log(`Session ${event.type} event received`);
-                        } else {
-                            console.log("Unhandled event type:", event.type);
                         }
                     } catch (error) {
                         console.error("Error parsing message:", error);
@@ -313,24 +279,6 @@
                 console.error("WebRTC initialization error:", error);
                 addMessage(`WebRTC initialization error: ${error.message}`, true);
                 throw error;
-            }
-        }
-
-        function sendResponseCreate() {
-            if (dataChannel && dataChannel.readyState === "open") {
-                const message = {
-                    type: "response.create",
-                    model: openAIModel,
-                    voice: "alloy",
-                    parameters: {
-                        temperature: 0.7,
-                        max_tokens: 500
-                    }
-                };
-                console.log("Sending response.create message:", message);
-                dataChannel.send(JSON.stringify(message));
-            } else {
-                console.error("Data channel not open");
             }
         }
 
@@ -372,71 +320,33 @@
                 
                 sessionId = response.sessionId;
                 clientSecret = response.clientSecret;
-                openAIKey = response.openAIKey;
 
-                if (!response.iceServers || !Array.isArray(response.iceServers)) {
-                    response.iceServers = [
-                        {
-                            urls: "stun:stun.relay.metered.ca:80",
-                        },
-                        {
-                            urls: "turn:global.relay.metered.ca:80",
-                            username: "dabe0db86808a99aa36c7309",
-                            credential: "n7sdOC9KUqBloUJ4",
-                        },
-                    ];
-                }
-                
                 initializeWebRTC(response.iceServers);
-
                 await startUserMedia();
 
-                await handleSignaling(sessionId, clientSecret);
-
-                return true;
-            } catch (error) {
-                console.error("Connection Error:", error);
-                addMessage(`Connection error: ${error.message}`, true);
-                endCall();
-                return false;
-            }
-        }
-
-        async function handleSignaling(sessionId, clientSecret) {
-            if (!peerConnection) throw new Error("WebRTC not initialized");
-
-            try {
-                addMessage("Creating SDP offer...");
-                
-                const offerOptions = {
+                // Create and set local description
+                const offer = await peerConnection.createOffer({
                     offerToReceiveAudio: true,
                     offerToReceiveVideo: false
-                };
-                const offer = await peerConnection.createOffer(offerOptions);
-                await peerConnection.setLocalDescription(offer);
-                
-                addMessage("Local description set, sending to server...");
-
-                const baseUrl = "https://api.openai.com/v1/realtime/sessions";
-                const sdpResponse = await fetch(baseUrl, {
-                    method: "POST",
-                    body: JSON.stringify({ sdp: offer.sdp }),
-                    headers: {
-                        Authorization: `Bearer ${clientSecret}`,
-                        "Content-Type": "application/json"
-                    }
                 });
-                
+                await peerConnection.setLocalDescription(offer);
+
+                // Connect to OpenAI Realtime API using the clientSecret
+                const sdpResponse = await fetch("https://api.openai.com/v1/realtime/sessions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${clientSecret}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        sdp: offer.sdp,
+                        model: openAIModel
+                    })
+                });
+
                 if (!sdpResponse.ok) {
                     const errorText = await sdpResponse.text();
-                    let errorMessage = "Unknown error";
-                    try {
-                        const errorData = await sdpResponse.json();
-                        errorMessage = errorData.error?.message || errorData.message || "Unknown error";
-                    } catch (e) {
-                        errorMessage = errorText || "Unknown error";
-                    }
-                    throw new Error(`OpenAI Error: ${errorMessage}`);
+                    throw new Error(`OpenAI Error: ${errorText}`);
                 }
 
                 const answerData = await sdpResponse.json();
@@ -449,22 +359,10 @@
                 addMessage("Connection established with OpenAI");
                 return true;
             } catch (error) {
-                console.error("Signaling Error:", error);
-                addMessage(`Signaling error: ${error.message}`, true);
+                console.error("Connection Error:", error);
+                addMessage(`Connection error: ${error.message}`, true);
                 endCall();
-                throw error;
-            }
-        }
-
-        async function sendSignalingData(sessionId, data) {
-            try {
-                await Parse.Cloud.run("sendSignalingData", {
-                    sessionId: sessionId,
-                    data: data
-                });
-            } catch (error) {
-                console.error("Signaling Error:", error);
-                throw error;
+                return false;
             }
         }
 
